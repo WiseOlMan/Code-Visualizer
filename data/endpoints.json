@@ -1,0 +1,925 @@
+{
+  "endpoints": [
+    {
+      "id": "app/api/admin/events/[id]/image/route.ts",
+      "url": "/api/admin/events/:id/image",
+      "urls": [
+        "/api/admin/events/:id/image"
+      ],
+      "methods": [
+        "PATCH"
+      ]
+    },
+    {
+      "id": "app/api/admin/events/[id]/route.ts",
+      "url": "/api/admin/events/:id",
+      "urls": [
+        "/api/admin/events/:id"
+      ],
+      "methods": [
+        "PATCH"
+      ]
+    },
+    {
+      "id": "app/api/admin/events/[id]/venue/route.ts",
+      "url": "/api/admin/events/:id/venue",
+      "urls": [
+        "/api/admin/events/:id/venue"
+      ],
+      "methods": [
+        "PATCH"
+      ]
+    },
+    {
+      "id": "app/api/admin/events/route.ts",
+      "url": "/api/admin/events",
+      "urls": [
+        "/api/admin/events"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/admin/sources/[id]/approve/route.ts",
+      "url": "/api/admin/sources/:id/approve",
+      "urls": [
+        "/api/admin/sources/:id/approve"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/admin/sources/[id]/details/route.ts",
+      "url": "/api/admin/sources/:id/details",
+      "urls": [
+        "/api/admin/sources/:id/details"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/admin/sources/[id]/route.ts",
+      "url": "/api/admin/sources/:id",
+      "urls": [
+        "/api/admin/sources/:id"
+      ],
+      "methods": [
+        "PUT",
+        "PATCH",
+        "DELETE"
+      ]
+    },
+    {
+      "id": "app/api/admin/sources/route.ts",
+      "url": "/api/admin/sources",
+      "urls": [
+        "/api/admin/sources"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/admin/submissions/[id]/approve/route.ts",
+      "url": "/api/admin/submissions/:id/approve",
+      "urls": [
+        "/api/admin/submissions/:id/approve"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/admin/submissions/[id]/reject/route.ts",
+      "url": "/api/admin/submissions/:id/reject",
+      "urls": [
+        "/api/admin/submissions/:id/reject"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/admin/submissions/route.ts",
+      "url": "/api/admin/submissions",
+      "urls": [
+        "/api/admin/submissions"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/admin/syncs/[id]/route.ts",
+      "url": "/api/admin/syncs/:id",
+      "urls": [
+        "/api/admin/syncs/:id"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/admin/syncs/route.ts",
+      "url": "/api/admin/syncs",
+      "urls": [
+        "/api/admin/syncs"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/admin/tags/[id]/details/route.ts",
+      "url": "/api/admin/tags/:id/details",
+      "urls": [
+        "/api/admin/tags/:id/details"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/admin/tags/[id]/route.ts",
+      "url": "/api/admin/tags/:id",
+      "urls": [
+        "/api/admin/tags/:id"
+      ],
+      "methods": [
+        "PATCH"
+      ]
+    },
+    {
+      "id": "app/api/admin/tags/route.ts",
+      "url": "/api/admin/tags",
+      "urls": [
+        "/api/admin/tags"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/admin/tags/search/route.ts",
+      "url": "/api/admin/tags/search",
+      "urls": [
+        "/api/admin/tags/search"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/admin/venues/[id]/events/route.ts",
+      "url": "/api/admin/venues/:id/events",
+      "urls": [
+        "/api/admin/venues/:id/events"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/admin/venues/[id]/route.ts",
+      "url": "/api/admin/venues/:id",
+      "urls": [
+        "/api/admin/venues/:id"
+      ],
+      "methods": [
+        "GET",
+        "PATCH",
+        "DELETE"
+      ]
+    },
+    {
+      "id": "app/api/admin/venues/route.ts",
+      "url": "/api/admin/venues",
+      "urls": [
+        "/api/admin/venues"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/calendar/feed/[filename]/route.ts",
+      "url": "/api/calendar/feed/:filename",
+      "urls": [
+        "/api/calendar/feed/:filename"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/config/force-simple-submit/route.ts",
+      "url": "/api/config/force-simple-submit",
+      "urls": [
+        "/api/config/force-simple-submit"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/cron/sync-sources/route.ts",
+      "url": "/api/cron/sync-sources",
+      "urls": [
+        "/api/cron/sync-sources"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/events/[id]/route.ts",
+      "url": "/api/events/:id",
+      "urls": [
+        "/api/events/:id"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/events/[id]/type/route.ts",
+      "url": "/api/events/:id/type",
+      "urls": [
+        "/api/events/:id/type"
+      ],
+      "methods": [
+        "PUT"
+      ]
+    },
+    {
+      "id": "app/api/events/calendar/route.ts",
+      "url": "/api/events/calendar",
+      "urls": [
+        "/api/events/calendar"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/events/route.ts",
+      "url": "/api/events",
+      "urls": [
+        "/api/events"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/ideas/[id]/status/route.ts",
+      "url": "/api/ideas/:id/status",
+      "urls": [
+        "/api/ideas/:id/status"
+      ],
+      "methods": [
+        "PUT"
+      ]
+    },
+    {
+      "id": "app/api/ideas/[id]/vote/route.ts",
+      "url": "/api/ideas/:id/vote",
+      "urls": [
+        "/api/ideas/:id/vote"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/ideas/route.ts",
+      "url": "/api/ideas",
+      "urls": [
+        "/api/ideas"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/og-image/route.ts",
+      "url": "/api/og-image",
+      "urls": [
+        "/api/og-image"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/saved-events/route.ts",
+      "url": "/api/saved-events",
+      "urls": [
+        "/api/saved-events"
+      ],
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ]
+    },
+    {
+      "id": "app/api/series/route.ts",
+      "url": "/api/series",
+      "urls": [
+        "/api/series"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/sources/route.ts",
+      "url": "/api/sources",
+      "urls": [
+        "/api/sources"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/submit-source/detect/route.ts",
+      "url": "/api/submit-source/detect",
+      "urls": [
+        "/api/submit-source/detect"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/submit-source/fetch-raw/route.ts",
+      "url": "/api/submit-source/fetch-raw",
+      "urls": [
+        "/api/submit-source/fetch-raw"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/submit-source/normalize-event/route.ts",
+      "url": "/api/submit-source/normalize-event",
+      "urls": [
+        "/api/submit-source/normalize-event"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/submit-source/preview/route.ts",
+      "url": "/api/submit-source/preview",
+      "urls": [
+        "/api/submit-source/preview"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/submit-source/route.ts",
+      "url": "/api/submit-source",
+      "urls": [
+        "/api/submit-source"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/submit-source/simple/route.ts",
+      "url": "/api/submit-source/simple",
+      "urls": [
+        "/api/submit-source/simple"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/user/ideas/route.ts",
+      "url": "/api/user/ideas",
+      "urls": [
+        "/api/user/ideas"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/user/preferences/route.ts",
+      "url": "/api/user/preferences",
+      "urls": [
+        "/api/user/preferences"
+      ],
+      "methods": [
+        "GET",
+        "PATCH"
+      ]
+    },
+    {
+      "id": "app/api/user/sources/route.ts",
+      "url": "/api/user/sources",
+      "urls": [
+        "/api/user/sources"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/venues/route.ts",
+      "url": "/api/venues",
+      "urls": [
+        "/api/venues"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "id": "app/mcp/route.ts",
+      "url": "/mcp",
+      "urls": [
+        "/mcp"
+      ],
+      "methods": []
+    }
+  ],
+  "calls": [
+    {
+      "source": "app/admin/page.tsx",
+      "target": "app/api/admin/venues/[id]/route.ts",
+      "urls": [
+        "/api/admin/venues/:param"
+      ],
+      "weight": 3,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/page.tsx",
+      "target": "app/api/admin/venues/[id]/events/route.ts",
+      "urls": [
+        "/api/admin/venues/:param/events"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/page.tsx",
+      "target": "app/api/admin/events/[id]/route.ts",
+      "urls": [
+        "/api/admin/events/:param"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/page.tsx",
+      "target": "app/api/admin/events/[id]/image/route.ts",
+      "urls": [
+        "/api/admin/events/:param/image"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/page.tsx",
+      "target": "app/api/admin/sources/[id]/route.ts",
+      "urls": [
+        "/api/admin/sources/:param"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/page.tsx",
+      "target": "app/api/admin/venues/route.ts",
+      "urls": [
+        "/api/admin/venues"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/page.tsx",
+      "target": "app/api/venues/route.ts",
+      "urls": [
+        "/api/venues"
+      ],
+      "weight": 2,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/page.tsx",
+      "target": "app/api/admin/sources/[id]/approve/route.ts",
+      "urls": [
+        "/api/admin/sources/:param/approve"
+      ],
+      "weight": 2,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/page.tsx",
+      "target": "app/api/sources/route.ts",
+      "urls": [
+        "/api/sources"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/submissions/page.tsx",
+      "target": "app/api/admin/submissions/[id]/approve/route.ts",
+      "urls": [
+        "/api/admin/submissions/:param/approve"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/submissions/page.tsx",
+      "target": "app/api/admin/submissions/[id]/reject/route.ts",
+      "urls": [
+        "/api/admin/submissions/:param/reject"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/syncs/[id]/page.tsx",
+      "target": "app/api/admin/syncs/[id]/route.ts",
+      "urls": [
+        "/api/admin/syncs/:param"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/syncs/page.tsx",
+      "target": "app/api/admin/syncs/route.ts",
+      "urls": [
+        "/api/admin/syncs"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/CalendarSyncDialog.tsx",
+      "target": "app/api/user/preferences/route.ts",
+      "urls": [
+        "/api/user/preferences"
+      ],
+      "weight": 2,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/CalendarSyncPrompt.tsx",
+      "target": "app/api/user/preferences/route.ts",
+      "urls": [
+        "/api/user/preferences"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/EventCard.tsx",
+      "target": "app/api/venues/route.ts",
+      "urls": [
+        "/api/venues"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/EventCard.tsx",
+      "target": "app/api/events/[id]/type/route.ts",
+      "urls": [
+        "/api/events/:param/type"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/EventCard.tsx",
+      "target": "app/api/admin/events/[id]/route.ts",
+      "urls": [
+        "/api/admin/events/:param"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/EventCard.tsx",
+      "target": "app/api/admin/events/[id]/venue/route.ts",
+      "urls": [
+        "/api/admin/events/:param/venue"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/EventCreateForm.tsx",
+      "target": "app/api/venues/route.ts",
+      "urls": [
+        "/api/venues"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/EventCreateForm.tsx",
+      "target": "app/api/admin/events/route.ts",
+      "urls": [
+        "/api/admin/events"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/Header.tsx",
+      "target": "app/api/config/force-simple-submit/route.ts",
+      "urls": [
+        "/api/config/force-simple-submit"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/IdeaForm.tsx",
+      "target": "app/api/ideas/route.ts",
+      "urls": [
+        "/api/ideas"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/IdeaStatus.tsx",
+      "target": "app/api/ideas/[id]/status/route.ts",
+      "urls": [
+        "/api/ideas/:param/status"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/IdeaVoteButton.tsx",
+      "target": "app/api/user/ideas/route.ts",
+      "urls": [
+        "/api/user/ideas"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/IdeaVoteButton.tsx",
+      "target": "app/api/ideas/[id]/vote/route.ts",
+      "urls": [
+        "/api/ideas/:param/vote"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/IdeasModal.tsx",
+      "target": "app/api/ideas/route.ts",
+      "urls": [
+        "/api/ideas"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/SourceAdminModal.tsx",
+      "target": "app/api/admin/sources/[id]/route.ts",
+      "urls": [
+        "/api/admin/sources/:param"
+      ],
+      "weight": 2,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/components/SourceFilter.tsx",
+      "target": "app/api/sources/route.ts",
+      "urls": [
+        "/api/sources"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/my-events/page.tsx",
+      "target": "app/api/saved-events/route.ts",
+      "urls": [
+        "/api/saved-events"
+      ],
+      "weight": 2,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/my-events/page.tsx",
+      "target": "app/api/series/route.ts",
+      "urls": [
+        "/api/series"
+      ],
+      "weight": 2,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/page.tsx",
+      "target": "app/api/saved-events/route.ts",
+      "urls": [
+        "/api/saved-events"
+      ],
+      "weight": 3,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/page.tsx",
+      "target": "app/api/events/[id]/route.ts",
+      "urls": [
+        "/api/events/:param"
+      ],
+      "weight": 2,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/page.tsx",
+      "target": "app/api/series/route.ts",
+      "urls": [
+        "/api/series"
+      ],
+      "weight": 3,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/page.tsx",
+      "target": "app/api/admin/events/[id]/route.ts",
+      "urls": [
+        "/api/admin/events/:param"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/page.tsx",
+      "target": "app/api/admin/sources/[id]/route.ts",
+      "urls": [
+        "/api/admin/sources/:param"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/page.tsx",
+      "target": "app/api/admin/events/[id]/image/route.ts",
+      "urls": [
+        "/api/admin/events/:param/image"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/preview/page.tsx",
+      "target": "app/api/venues/route.ts",
+      "urls": [
+        "/api/venues"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/preview/page.tsx",
+      "target": "app/api/submit-source/fetch-raw/route.ts",
+      "urls": [
+        "/api/submit-source/fetch-raw"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/preview/page.tsx",
+      "target": "app/api/submit-source/normalize-event/route.ts",
+      "urls": [
+        "/api/submit-source/normalize-event"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/preview/page.tsx",
+      "target": "app/api/submit-source/route.ts",
+      "urls": [
+        "/api/submit-source"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/source/[id]/page.tsx",
+      "target": "app/api/admin/sources/[id]/details/route.ts",
+      "urls": [
+        "/api/admin/sources/:param/details"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/submit/page.tsx",
+      "target": "app/api/submit-source/simple/route.ts",
+      "urls": [
+        "/api/submit-source/simple"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/submit-v2/page.tsx",
+      "target": "app/api/config/force-simple-submit/route.ts",
+      "urls": [
+        "/api/config/force-simple-submit"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/submit-v2/page.tsx",
+      "target": "app/api/user/sources/route.ts",
+      "urls": [
+        "/api/user/sources"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/submit-v2/page.tsx",
+      "target": "app/api/submit-source/detect/route.ts",
+      "urls": [
+        "/api/submit-source/detect"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    }
+  ]
+}

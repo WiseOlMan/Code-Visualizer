@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+data/meta.json
+data/recent.json
+data/session.json
+data/workspaces/
+.tmp/
+.cache/
+.vite/
