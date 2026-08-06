@@ -59,7 +59,42 @@ export class CodeExplorer extends CodeGraphEngine {
               <div style={{ fontSize: 12, color: 'var(--color-neutral-500)', marginTop: 'var(--space-1)' }}>
                 {v.statLine}
               </div>
+              {v.gitSummary && (
+                <div style={{ fontSize: 11, color: 'var(--color-accent-300)', marginTop: 'var(--space-2)', lineHeight: 1.4 }}>
+                  {v.gitSummary}
+                </div>
+              )}
             </div>
+
+            {v.gitStale && v.onReanalyze && (
+              <div style={{
+                display: 'flex', flexDirection: 'column', gap: 8,
+                padding: 'var(--space-3)', borderRadius: 'var(--radius-md)',
+                background: 'var(--color-accent-900)', border: '1px solid var(--color-accent-700)',
+              }}>
+                <div style={{ fontSize: 11.5, color: 'var(--color-accent-200)', lineHeight: 1.4 }}>
+                  {v.gitStaleReason === 'missing' || v.gitMissing
+                    ? `${v.gitMissing} branch file${v.gitMissing === 1 ? '' : 's'} missing from this graph — refreshing…`
+                    : v.gitStaleReason === 'sources' || v.gitSourcesNewer
+                      ? 'Source files changed since the last analyze — refreshing imports…'
+                      : 'Git moved since the last analyze — refreshing the graph…'}
+                </div>
+                <button type="button" className="btn" onClick={v.onReanalyze}
+                  style={{
+                    fontSize: 12, padding: '6px 10px',
+                    background: 'var(--color-accent-700)', borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--color-accent-600)',
+                  }}>
+                  Re-analyze now
+                </button>
+              </div>
+            )}
+            {!v.gitStale && v.onReanalyze && v.gitFileCount > 0 && (
+              <button type="button" className="btn btn-ghost" onClick={v.onReanalyze}
+                style={{ fontSize: 11, padding: 'var(--space-2) var(--space-3)', alignSelf: 'flex-start' }}>
+                Re-analyze
+              </button>
+            )}
 
             <div style={{
               display: 'flex', flexDirection: 'column', gap: 'var(--space-4)',
@@ -93,11 +128,55 @@ export class CodeExplorer extends CodeGraphEngine {
                   style={{ fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)' }}>
                   {v.testsLabel}
                 </button>
+                <button type="button" className="btn btn-ghost" onClick={v.toggleHighlightGit}
+                  style={{
+                    fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)',
+                    borderColor: v.highlightGit ? 'var(--color-accent-700)' : 'var(--color-neutral-800)',
+                    color: v.highlightGit ? 'var(--color-accent-300)' : 'var(--color-neutral-500)',
+                  }}>
+                  {v.highlightGit ? 'Branch colors on' : 'Branch colors off'}
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={v.toggleOnlyGit}
+                  style={{
+                    fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)',
+                    borderColor: v.onlyGit ? 'var(--color-accent-700)' : 'var(--color-neutral-800)',
+                    color: v.onlyGit ? 'var(--color-accent-300)' : 'var(--color-neutral-500)',
+                  }}>
+                  {v.onlyGit ? 'Changed files only' : 'All files'}
+                </button>
+                {v.gitFileCount > 0 && (
+                  <button type="button" className="btn btn-ghost" onClick={v.focusGit}
+                    style={{ fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)' }}>
+                    Focus changed
+                  </button>
+                )}
                 <button type="button" className="btn btn-ghost" onClick={v.refit}
                   style={{ fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)' }}>
                   Recenter
                 </button>
               </div>
+              {v.gitFileCount > 0 && (
+                <div style={{
+                  display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 10.5,
+                  color: 'var(--color-neutral-400)', alignItems: 'center',
+                }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 99, background: '#2EFF7A', display: 'block' }} />
+                    added{v.gitCounts?.A ? ` ${v.gitCounts.A}` : ''}
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{
+                      width: 8, height: 8, borderRadius: 99, display: 'block',
+                      border: '2px solid #2EFF7A', boxSizing: 'border-box',
+                    }} />
+                    edited{v.gitCounts?.M ? ` ${v.gitCounts.M}` : ''}
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 99, background: '#FF4D5E', display: 'block' }} />
+                    deleted{v.gitCounts?.D ? ` ${v.gitCounts.D}` : ''}
+                  </span>
+                </div>
+              )}
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>

@@ -4,11 +4,31 @@ import React from 'react';
 const asset = (_id, fallback) => fallback;
 
 const INK = { bg: '#161826', text: '#e9e9ed', edge: '#75798c', call: '#9184d9', plate: '#161826' };
+/** Branch-diff colors — neon green adds / edit rings; red deletions.
+ *  Kept out of the folder palette so group greens never read as "added". */
+const GIT = { add: '#2EFF7A', edit: '#2EFF7A', del: '#FF4D5E', delDim: '#FF4D5E99' };
+
+function normGitStatus(status) {
+  const s = String(status || '').toUpperCase().slice(0, 1);
+  if (s === 'A' || s === '?' || s === 'C') return 'A';
+  if (s === 'D') return 'D';
+  if (s === 'M' || s === 'R' || s === 'T' || s === 'U') return 'M';
+  return s ? 'M' : null;
+}
+
+/** Folder fills when branch colors are on — mute so only git A/M/D pop. */
+function muteFolderColor(c) {
+  const m = /^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)$/i.exec(String(c || ''));
+  if (m) return `oklch(${(+m[1] * 0.52).toFixed(3)} ${(+m[2] * 0.12).toFixed(3)} ${m[3]})`;
+  return '#3a3d4c';
+}
 
 /* ---------- grouping: derived from the repo's own folder tree ---------- */
 // Nothing here is repo-specific — drop any codebase in and the palette
 // reorganises around whatever top-level structure it actually has.
 const MAX_GROUPS = 11;
+// Hues deliberately skip ~120–160 (lime/green) reserved for git adds/edits.
+const GROUP_HUES = [220, 255, 290, 325, 15, 40, 55, 195, 245, 340, 75];
 function deriveGroups(ids) {
   const count = {};
   const keyOf = id => {
@@ -25,9 +45,11 @@ function deriveGroups(ids) {
   }
   const ranked = Object.keys(folded).sort((a, b) => folded[b] - folded[a]).slice(0, MAX_GROUPS);
   const prefixes = ranked.sort((a, b) => b.length - a.length);
-  const hue = i => 25 + (i * 360) / Math.max(1, ranked.length);
   const colors = {};
-  ranked.forEach((k, i) => { colors[k] = `oklch(0.75 0.115 ${hue(i).toFixed(0)})`; });
+  ranked.forEach((k, i) => {
+    const h = GROUP_HUES[i % GROUP_HUES.length];
+    colors[k] = `oklch(0.72 0.11 ${h})`;
+  });
   const label = k => k.split('/').pop();
   return {
     of(id) {
@@ -160,11 +182,12 @@ function socketBox(n) {
   const w = Math.max(15, n.r * 2.7), h = Math.max(10, n.r * 1.75);
   return { w, h, x0: n.x - w / 2, y0: n.y - h / 2 };
 }
-function drawSocket(ctx, n, k, alpha, emphasis) {
+function drawSocket(ctx, n, k, alpha, emphasis, fillOverride, dashed) {
+  const shell = fillOverride || n.color;
   const { w, h, x0, y0 } = socketBox(n);
   const r = Math.min(h / 2.4, 4);
   ctx.globalAlpha = alpha * 0.9;
-  ctx.fillStyle = n.color;
+  ctx.fillStyle = shell;
   ctx.beginPath(); ctx.roundRect(x0, y0, w, h, r); ctx.fill();
 
   const inset = Math.max(1.6, h * 0.17);
@@ -178,7 +201,7 @@ function drawSocket(ctx, n, k, alpha, emphasis) {
   const pins = w > 26 ? 3 : 2;
   const pw = Math.max(1.1, w * 0.075), ph = (h - inset * 2) * 0.55;
   ctx.globalAlpha = alpha * 0.95;
-  ctx.fillStyle = n.color;
+  ctx.fillStyle = shell;
   for (let i = 0; i < pins; i++) {
     const cx = x0 + w * ((i + 1) / (pins + 1));
     ctx.beginPath();
@@ -189,7 +212,9 @@ function drawSocket(ctx, n, k, alpha, emphasis) {
     ctx.globalAlpha = 0.95;
     ctx.lineWidth = 2 / k;
     ctx.strokeStyle = emphasis;
+    if (dashed) ctx.setLineDash([3 / k, 2.5 / k]);
     ctx.beginPath(); ctx.roundRect(x0 - 2, y0 - 2, w + 4, h + 4, r + 2); ctx.stroke();
+    if (dashed) ctx.setLineDash([]);
   }
 }
 // Where a wire should meet the shell, coming from (fx, fy)
@@ -266,7 +291,9 @@ export class CodeGraphEngine extends React.Component {
   state = {
     query: '', selId: null, code: null, sigTick: 0, labelTick: 0, panelTab: 'details',
     folderDepth: 2, hideTests: true, hideGenerated: true,
-    showCalls: true, stats: '', repoName: '',
+    showCalls: true, highlightGit: true, onlyGit: false,
+    stats: '', repoName: '',
+    gitSummary: '', gitStale: false, gitMissing: 0, gitSourcesNewer: 0, gitStaleReason: null, gitFileCount: 0,
   };
 
   constructor(p) {
@@ -381,6 +408,10 @@ export class CodeGraphEngine extends React.Component {
     if (this.props.liveGraph && this.props.liveGraph !== prev.liveGraph) {
       const { graph, endpoints, soft } = this.props.liveGraph;
       this.applyGraph(graph, endpoints, { soft: !!soft });
+      this.applyGitOverlay(this.props.gitInfo);
+    }
+    if (this.props.gitInfo !== prev.gitInfo) {
+      this.applyGitOverlay(this.props.gitInfo);
     }
     this.drawLegend();
   }
@@ -625,17 +656,108 @@ export class CodeGraphEngine extends React.Component {
       repoName: (d.repo || 'codebase'),
       stats: `${this.nodes.length} files · ${d.links.length} imports · ${nEp} endpoints · ${nCalls} calls`,
     });
+    this.applyGitOverlay(this.props.gitInfo);
     this.kick(1);
+  }
+
+  applyGitOverlay(gitInfo) {
+    // Drop deletion ghosts from a previous overlay before rebuilding.
+    if (this._gitGhostIds?.length) {
+      const ghosts = new Set(this._gitGhostIds);
+      this.nodes = (this.nodes || []).filter((n) => !ghosts.has(n.id));
+      this.byId = Object.fromEntries(this.nodes.map((n) => [n.id, n]));
+      this._gitGhostIds = [];
+    }
+
+    const files = gitInfo?.files || [];
+    const byStatus = new Map();
+    const rank = { A: 3, M: 2, D: 1 };
+    for (const f of files) {
+      if (!f.graphId) continue;
+      const st = normGitStatus(f.status);
+      if (!st) continue;
+      const prev = byStatus.get(f.graphId);
+      if (!prev || (rank[st] || 0) > (rank[prev] || 0)) byStatus.set(f.graphId, st);
+    }
+
+    for (const n of this.nodes || []) {
+      n.gitStatus = byStatus.get(n.id) || null;
+      n.gitChanged = !!n.gitStatus;
+      n.gitGhost = false;
+    }
+
+    // Deletions still show when the file remains in the last graph; if it's
+    // already gone from the graph, inject a ghost node so red "removed" is visible.
+    this._gitGhostIds = [];
+    if (this.groups && this.nodes) {
+      const W = this.w || 900, H = this.h || 600;
+      for (const [graphId, st] of byStatus) {
+        if (st !== 'D' || this.byId[graphId]) continue;
+        const g = this.groups.of(graphId);
+        const peers = this.nodes.filter((n) => n.gkey === g.key && !n.gitGhost);
+        const anchor = peers[0];
+        const ghost = {
+          id: graphId,
+          name: graphId.split('/').pop(),
+          label: graphId.split('/').pop(),
+          folder: graphId.includes('/') ? graphId.slice(0, graphId.lastIndexOf('/')) : '',
+          g: g.label, gkey: g.key, gcolor: g.color,
+          color: GIT.del,
+          gitStatus: 'D', gitChanged: true, gitGhost: true,
+          inDeg: 0, outDeg: 0, isEndpoint: false, url: null,
+          x: (anchor?.x ?? W / 2) + (Math.random() - 0.5) * 40,
+          y: (anchor?.y ?? H / 2) + (Math.random() - 0.5) * 40,
+          vx: 0, vy: 0, r: 5.5,
+        };
+        this.nodes.push(ghost);
+        this.byId[graphId] = ghost;
+        this._gitGhostIds.push(graphId);
+      }
+    }
+
+    const branches = [...new Set((gitInfo?.packages || []).map((p) => p.branch).filter(Boolean))];
+    const bases = [...new Set((gitInfo?.packages || []).map((p) => p.base).filter(Boolean))];
+    const missing = gitInfo?.missingFromGraph?.length || 0;
+    const sourcesNewer = gitInfo?.sourcesNewer?.length || 0;
+    const counts = { A: 0, M: 0, D: 0 };
+    for (const st of byStatus.values()) counts[st] = (counts[st] || 0) + 1;
+    let gitSummary = '';
+    if (branches.length || byStatus.size) {
+      const br = branches.length ? branches.join(', ') : 'HEAD';
+      const base = bases[0] ? ` vs ${bases[0]}` : '';
+      const parts = [];
+      if (counts.A) parts.push(`${counts.A} added`);
+      if (counts.M) parts.push(`${counts.M} edited`);
+      if (counts.D) parts.push(`${counts.D} deleted`);
+      gitSummary = `${br}${base} · ${parts.join(' · ') || `${byStatus.size} changed`}`;
+      if (missing) gitSummary += ` · ${missing} not in graph`;
+    }
+    this.setState({
+      gitSummary,
+      gitStale: !!gitInfo?.stale,
+      gitMissing: missing,
+      gitSourcesNewer: sourcesNewer,
+      gitStaleReason: gitInfo?.staleReason || null,
+      gitFileCount: byStatus.size,
+      gitCounts: counts,
+    }, () => this.applyFilter());
   }
 
   applyFilter() {
     const hideTests = this.state.hideTests;
     const hideGenerated = this.state.hideGenerated;
     const showCalls = this.state.showCalls;
+    const onlyGit = this.state.onlyGit;
     for (const n of this.nodes) {
-      n.off =
-        (hideTests && /\.(test|spec)\.[jt]sx?$/.test(n.name || '')) ||
-        (hideGenerated && isGenerated(n.id));
+      // "Changed only" wins: show every git-touched file (incl. tests) and keep
+      // folder cells rebuilt from that set so foldering stays intact.
+      if (onlyGit) {
+        n.off = !n.gitChanged;
+      } else {
+        n.off =
+          (hideTests && /\.(test|spec)\.[jt]sx?$/.test(n.name || '')) ||
+          (hideGenerated && isGenerated(n.id));
+      }
     }
     for (const l of this.links) {
       let off = l.s.off || l.t.off || (l.kind === 'call' && !showCalls);
@@ -648,6 +770,8 @@ export class CodeGraphEngine extends React.Component {
           off = true;
         }
       }
+      // In changed-only mode, keep edges between two visible changed files.
+      if (!off && onlyGit && (!l.s.gitChanged || !l.t.gitChanged)) off = true;
       l.off = off;
     }
     this.cells = null; this.frames = null;
@@ -1118,21 +1242,44 @@ export class CodeGraphEngine extends React.Component {
     }
 
     const labels = [];
+    const hlGit = this.state.highlightGit;
     for (const n of (this.active || this.nodes)) {
       const match = !q || n.id.toLowerCase().includes(q);
       const on = !focus || near.has(n.id);
-      const alpha = (on ? 1 : 0.16) * (match ? 1 : 0.2);
+      let alpha = (on ? 1 : 0.16) * (match ? 1 : 0.2);
+      // With branch colors on, mute unchanged so folder greens never look like adds.
+      if (hlGit && !n.gitChanged) alpha *= 0.28;
+      if (hlGit && n.gitStatus === 'D') alpha *= 0.85;
+      const folderFill = (hlGit && !n.gitChanged) ? muteFolderColor(n.color) : n.color;
       if (n.isEndpoint) {
-        const emph = (n === sel || n === labeled) ? INK.text : (q && match && q.length > 1 ? INK.text : null);
-        drawSocket(ctx, n, k, alpha, emph);
+        const gitFill = hlGit && n.gitStatus === 'A' ? GIT.add
+          : hlGit && n.gitStatus === 'D' ? GIT.del
+          : (hlGit && !n.gitChanged ? folderFill : null);
+        const emph = (n === sel || n === labeled) ? INK.text
+          : (hlGit && n.gitStatus === 'M') ? GIT.edit
+          : (hlGit && n.gitStatus === 'A') ? '#12c45a'
+          : (hlGit && n.gitStatus === 'D') ? '#ff8a95'
+          : (q && match && q.length > 1 ? INK.text : null);
+        drawSocket(ctx, n, k, alpha, emph, gitFill, hlGit && n.gitStatus === 'D');
       } else {
         ctx.globalAlpha = alpha;
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r, 0, 6.2832);
-        ctx.fillStyle = n.color;
+        // Added = neon green fill; deleted = red; edited keep (unmuted) folder color + ring.
+        if (hlGit && n.gitStatus === 'A') ctx.fillStyle = GIT.add;
+        else if (hlGit && n.gitStatus === 'D') ctx.fillStyle = GIT.del;
+        else ctx.fillStyle = folderFill;
         ctx.fill();
         if (n === sel || n === labeled) {
           ctx.lineWidth = 2.5 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.95; ctx.stroke();
+        } else if (hlGit && n.gitStatus === 'M') {
+          // Edited = bright green ring
+          ctx.lineWidth = 2.4 / k; ctx.strokeStyle = GIT.edit; ctx.globalAlpha = 1; ctx.stroke();
+        } else if (hlGit && n.gitStatus === 'A') {
+          ctx.lineWidth = 1.6 / k; ctx.strokeStyle = '#12c45a'; ctx.globalAlpha = 0.95; ctx.stroke();
+        } else if (hlGit && n.gitStatus === 'D') {
+          ctx.lineWidth = 1.8 / k; ctx.strokeStyle = '#ff8a95'; ctx.globalAlpha = 0.95;
+          ctx.setLineDash([3 / k, 2.5 / k]); ctx.stroke(); ctx.setLineDash([]);
         } else if (q && match && q.length > 1) {
           ctx.lineWidth = 1.5 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.8; ctx.stroke();
         }
@@ -1140,7 +1287,8 @@ export class CodeGraphEngine extends React.Component {
       // One neighborhood title at a time (Tab / Shift+Tab cycles). Search hits still collide-cull.
       const primary = labeled && n === labeled;
       const searchHit = q && q.length > 1 && match;
-      if (primary || searchHit) labels.push({ n, on, primary, searchHit });
+      const gitHit = hlGit && n.gitChanged && (this.state.onlyGit || !q);
+      if (primary || searchHit || gitHit) labels.push({ n, on, primary, searchHit: searchHit || gitHit });
     }
 
     // Draw primary label last so it wins overlaps against search hits
@@ -1280,6 +1428,31 @@ export class CodeGraphEngine extends React.Component {
       callsBorder: this.state.showCalls ? 'var(--color-accent-700)' : 'var(--color-neutral-800)',
       callsColor: this.state.showCalls ? 'var(--color-accent-300)' : 'var(--color-neutral-500)',
       toggleCalls: () => this.setState({ showCalls: !this.state.showCalls }, () => this.applyFilter()),
+      highlightGit: this.state.highlightGit,
+      onlyGit: this.state.onlyGit,
+      gitSummary: this.state.gitSummary,
+      gitStale: this.state.gitStale,
+      gitMissing: this.state.gitMissing,
+      gitSourcesNewer: this.state.gitSourcesNewer,
+      gitStaleReason: this.state.gitStaleReason,
+      gitFileCount: this.state.gitFileCount,
+      gitCounts: this.state.gitCounts || { A: 0, M: 0, D: 0 },
+      toggleHighlightGit: () => this.setState({ highlightGit: !this.state.highlightGit }, () => this.kick()),
+      toggleOnlyGit: () => this.setState({ onlyGit: !this.state.onlyGit }, () => {
+        this.applyFilter();
+        this.queueFit({ all: true });
+      }),
+      focusGit: () => {
+        // Hide everything else, keep foldering, then frame the diff.
+        this.setState({ onlyGit: true, highlightGit: true }, () => {
+          this.applyFilter();
+          const ns = (this.nodes || []).filter((n) => n.gitChanged && !n.off);
+          if (ns.length) this.fitNodes(ns, { pad: 64, maxK: 2.8 });
+          else this.queueFit({ all: true });
+          this.kick();
+        });
+      },
+      onReanalyze: this.props.onReanalyze,
       refit: () => this.queueFit({ all: true }),
       groups: gs ? gs.keys.map(k => ({
         id: k, label: gs.label(k), color: gs.colorOf(k), count: counts[k] || 0,

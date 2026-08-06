@@ -96,6 +96,17 @@ async function fetchWorkspace(root) {
   return res.json();
 }
 
+async function fetchGitChanges(root) {
+  if (!root) return null;
+  try {
+    const res = await fetch(`/api/git/changes?root=${encodeURIComponent(root)}`);
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   const [tabs, setTabs] = useState([]);
   const [activeId, setActiveId] = useState(null);
@@ -252,6 +263,43 @@ export default function App() {
     setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   }
 
+  const refreshGit = useCallback(async (tabId, root) => {
+    if (!tabId || !root) return;
+    const gitInfo = await fetchGitChanges(root);
+    if (gitInfo) patchTab(tabId, { gitInfo });
+  }, []);
+
+  useEffect(() => {
+    if (!activeTab?.root || activeTab.busy) return;
+    refreshGit(activeTab.id, activeTab.root);
+    // Poll often enough that WIP edits surface without a manual refresh.
+    const t = setInterval(() => refreshGit(activeTab.id, activeTab.root), 5_000);
+    return () => clearInterval(t);
+  }, [activeTab?.id, activeTab?.root, activeTab?.busy, activeTab?.reloadToken, refreshGit]);
+
+  // When the graph is behind HEAD or dirty sources, re-analyze automatically.
+  const autoStaleKey = activeTab?.gitInfo?.stale
+    ? [
+      activeTab.root,
+      activeTab.gitInfo.staleReason || 'stale',
+      (activeTab.gitInfo.sourcesNewer || []).join('|'),
+      (activeTab.gitInfo.missingFromGraph || []).join('|'),
+      ...(activeTab.gitInfo.stalePackages || []).map((p) => p.currentHead || ''),
+    ].join('::')
+    : '';
+  useEffect(() => {
+    if (!autoStaleKey || !activeTab?.root || activeTab.busy || globalBusy) return;
+    const root = activeTab.root;
+    const t = setTimeout(() => {
+      // Still the active tab and still stale for this fingerprint.
+      const tab = tabsRef.current.find((x) => x.root === root);
+      if (!tab || tab.busy || !tab.gitInfo?.stale) return;
+      analyze(root);
+    }, 1200);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- analyze is stable enough via tabsRef
+  }, [autoStaleKey, activeTab?.root, activeTab?.busy, globalBusy]);
+
   async function analyze(value) {
     const next = (value ?? target).trim();
     if (!next) return;
@@ -322,6 +370,7 @@ export default function App() {
             reloadToken: Date.now(),
             busy: false,
           });
+          if (event.root) refreshGit(id, event.root);
         } else if (event.type === 'error') {
           throw new Error(event.error || 'Analyze failed');
         }
@@ -615,8 +664,10 @@ export default function App() {
                 workspaceRoot={tab.root}
                 liveGraph={tab.liveGraph}
                 reloadToken={tab.reloadToken}
+                gitInfo={tab.gitInfo || null}
                 sidebarOpen={sidebarOpen}
                 onToggleSidebar={() => setSidebarOpen((v) => !v)}
+                onReanalyze={tab.root ? () => analyze(tab.root) : undefined}
                 query={on ? explorerQuery : ''}
                 onQueryChange={(q) => {
                   setSearchScope('repo');

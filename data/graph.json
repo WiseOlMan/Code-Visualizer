@@ -223,7 +223,7 @@
       "folder": "app/api/calendar/feed/[filename]",
       "isTest": false,
       "inDeg": 0,
-      "outDeg": 1
+      "outDeg": 2
     },
     {
       "id": "app/api/config/force-simple-submit/route.ts",
@@ -714,6 +714,22 @@
       "outDeg": 0
     },
     {
+      "id": "lib/ical-format.test.ts",
+      "name": "ical-format.test.ts",
+      "folder": "lib",
+      "isTest": true,
+      "inDeg": 0,
+      "outDeg": 1
+    },
+    {
+      "id": "lib/ical-format.ts",
+      "name": "ical-format.ts",
+      "folder": "lib",
+      "isTest": false,
+      "inDeg": 2,
+      "outDeg": 0
+    },
+    {
       "id": "lib/markdown.ts",
       "name": "markdown.ts",
       "folder": "lib",
@@ -946,6 +962,22 @@
       "outDeg": 0
     },
     {
+      "id": "lib/sources/albemarleCiderworks.ts",
+      "name": "albemarleCiderworks.ts",
+      "folder": "lib/sources",
+      "isTest": false,
+      "inDeg": 2,
+      "outDeg": 0
+    },
+    {
+      "id": "lib/sources/cbic.ts",
+      "name": "cbic.ts",
+      "folder": "lib/sources",
+      "isTest": false,
+      "inDeg": 1,
+      "outDeg": 0
+    },
+    {
       "id": "lib/sources/chiles.ts",
       "name": "chiles.ts",
       "folder": "lib/sources",
@@ -978,6 +1010,14 @@
       "outDeg": 0
     },
     {
+      "id": "lib/sources/klugeRuhe.ts",
+      "name": "klugeRuhe.ts",
+      "folder": "lib/sources",
+      "isTest": false,
+      "inDeg": 1,
+      "outDeg": 0
+    },
+    {
       "id": "lib/sources/millers.ts",
       "name": "millers.ts",
       "folder": "lib/sources",
@@ -988,6 +1028,30 @@
     {
       "id": "lib/sources/ndBookshop.ts",
       "name": "ndBookshop.ts",
+      "folder": "lib/sources",
+      "isTest": false,
+      "inDeg": 1,
+      "outDeg": 0
+    },
+    {
+      "id": "lib/sources/starrHillBrewery.ts",
+      "name": "starrHillBrewery.ts",
+      "folder": "lib/sources",
+      "isTest": false,
+      "inDeg": 2,
+      "outDeg": 0
+    },
+    {
+      "id": "lib/sources/theCenter.ts",
+      "name": "theCenter.ts",
+      "folder": "lib/sources",
+      "isTest": false,
+      "inDeg": 3,
+      "outDeg": 0
+    },
+    {
+      "id": "lib/sources/theContainer.ts",
+      "name": "theContainer.ts",
       "folder": "lib/sources",
       "isTest": false,
       "inDeg": 1,
@@ -1191,7 +1255,7 @@
       "folder": "prisma",
       "isTest": false,
       "inDeg": 0,
-      "outDeg": 8
+      "outDeg": 14
     },
     {
       "id": "prisma/seeds/cityspark-tags.ts",
@@ -1402,6 +1466,14 @@
       "outDeg": 1
     },
     {
+      "id": "scripts/update-albemarle-ciderworks-source.ts",
+      "name": "update-albemarle-ciderworks-source.ts",
+      "folder": "scripts",
+      "isTest": false,
+      "inDeg": 0,
+      "outDeg": 1
+    },
+    {
       "id": "scripts/update-blues-fc-source.ts",
       "name": "update-blues-fc-source.ts",
       "folder": "scripts",
@@ -1420,6 +1492,30 @@
     {
       "id": "scripts/update-millers-source.ts",
       "name": "update-millers-source.ts",
+      "folder": "scripts",
+      "isTest": false,
+      "inDeg": 0,
+      "outDeg": 1
+    },
+    {
+      "id": "scripts/update-starr-hill-brewery-source.ts",
+      "name": "update-starr-hill-brewery-source.ts",
+      "folder": "scripts",
+      "isTest": false,
+      "inDeg": 0,
+      "outDeg": 1
+    },
+    {
+      "id": "scripts/update-the-center-source-cvi416.ts",
+      "name": "update-the-center-source-cvi416.ts",
+      "folder": "scripts",
+      "isTest": false,
+      "inDeg": 0,
+      "outDeg": 1
+    },
+    {
+      "id": "scripts/update-the-center-source.ts",
+      "name": "update-the-center-source.ts",
       "folder": "scripts",
       "isTest": false,
       "inDeg": 0,
@@ -2008,6 +2104,16 @@
       "target": "lib/prisma.ts",
       "symbols": [
         "prisma"
+      ],
+      "weight": 1,
+      "sideEffect": false
+    },
+    {
+      "source": "app/api/calendar/feed/[filename]/route.ts",
+      "target": "lib/ical-format.ts",
+      "symbols": [
+        "formatICalLocalDate",
+        "formatICalUtcDate"
       ],
       "weight": 1,
       "sideEffect": false
@@ -3301,6 +3407,16 @@
       "sideEffect": false
     },
     {
+      "source": "lib/ical-format.test.ts",
+      "target": "lib/ical-format.ts",
+      "symbols": [
+        "formatICalLocalDate",
+        "formatICalUtcDate"
+      ],
+      "weight": 1,
+      "sideEffect": false
+    },
+    {
       "source": "lib/mcp/chatgpt.test.ts",
       "target": "lib/mcp/chatgpt.ts",
       "symbols": [
@@ -3386,6 +3502,7 @@
       "symbols": [
         "constrainEventDateToRange",
         "discoverCandidateUrlsFromSitemapXml",
+        "extractEventsFromEventbriteNextData",
         "extractEventsFromWixWarmupData",
         "extractSingleEventFromPageMetadata",
         "htmlScraperFetcher"
@@ -4057,6 +4174,60 @@
       "sideEffect": false
     },
     {
+      "source": "prisma/seed.ts",
+      "target": "lib/sources/albemarleCiderworks.ts",
+      "symbols": [
+        "upsertAlbemarleCiderworksSourceAndVenue"
+      ],
+      "weight": 1,
+      "sideEffect": false
+    },
+    {
+      "source": "prisma/seed.ts",
+      "target": "lib/sources/cbic.ts",
+      "symbols": [
+        "upsertCbicSource"
+      ],
+      "weight": 1,
+      "sideEffect": false
+    },
+    {
+      "source": "prisma/seed.ts",
+      "target": "lib/sources/starrHillBrewery.ts",
+      "symbols": [
+        "upsertStarrHillBrewerySourceAndVenue"
+      ],
+      "weight": 1,
+      "sideEffect": false
+    },
+    {
+      "source": "prisma/seed.ts",
+      "target": "lib/sources/klugeRuhe.ts",
+      "symbols": [
+        "upsertKlugeRuheSourceAndVenue"
+      ],
+      "weight": 1,
+      "sideEffect": false
+    },
+    {
+      "source": "prisma/seed.ts",
+      "target": "lib/sources/theCenter.ts",
+      "symbols": [
+        "upsertTheCenterSourceAndVenue"
+      ],
+      "weight": 1,
+      "sideEffect": false
+    },
+    {
+      "source": "prisma/seed.ts",
+      "target": "lib/sources/theContainer.ts",
+      "symbols": [
+        "upsertTheContainerSource"
+      ],
+      "weight": 1,
+      "sideEffect": false
+    },
+    {
       "source": "scripts/cleanup-html-entities.ts",
       "target": "lib/prisma.ts",
       "symbols": [
@@ -4238,6 +4409,17 @@
       "sideEffect": false
     },
     {
+      "source": "scripts/update-albemarle-ciderworks-source.ts",
+      "target": "lib/sources/albemarleCiderworks.ts",
+      "symbols": [
+        "ALBEMARLE_CIDERWORKS_SOURCE_ID",
+        "ALBEMARLE_CIDERWORKS_SOURCE_NAME",
+        "upsertAlbemarleCiderworksSourceAndVenue"
+      ],
+      "weight": 1,
+      "sideEffect": false
+    },
+    {
       "source": "scripts/update-foxfield-source.ts",
       "target": "lib/sources/foxfield.ts",
       "symbols": [
@@ -4254,6 +4436,35 @@
       "symbols": [
         "MILLERS_SOURCE_ID",
         "upsertMillersSource"
+      ],
+      "weight": 1,
+      "sideEffect": false
+    },
+    {
+      "source": "scripts/update-starr-hill-brewery-source.ts",
+      "target": "lib/sources/starrHillBrewery.ts",
+      "symbols": [
+        "STARR_HILL_BREWERY_SOURCE_ID",
+        "STARR_HILL_BREWERY_SOURCE_NAME",
+        "upsertStarrHillBrewerySourceAndVenue"
+      ],
+      "weight": 1,
+      "sideEffect": false
+    },
+    {
+      "source": "scripts/update-the-center-source-cvi416.ts",
+      "target": "lib/sources/theCenter.ts",
+      "symbols": [
+        "upsertTheCenterSourceAndVenue"
+      ],
+      "weight": 1,
+      "sideEffect": false
+    },
+    {
+      "source": "scripts/update-the-center-source.ts",
+      "target": "lib/sources/theCenter.ts",
+      "symbols": [
+        "upsertTheCenterSourceAndVenue"
       ],
       "weight": 1,
       "sideEffect": false

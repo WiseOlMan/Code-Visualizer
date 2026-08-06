@@ -9,6 +9,7 @@ Interactive force-graph explorer for JavaScript / TypeScript codebases. Run it l
 - **Tabs** — open multiple repos and switch between them (restored on refresh)  
 - **Search** — magnifying glass (top-right of the tab row); this repo by default, or all open repos  
 - **Sidebar** — filters + legend; toggle from the panel icon at the top-left of the graph  
+- **Branch changes** — green fill = added, green ring = edited, red = deleted (vs `main`/`master`); “Changed files only” keeps folder layout; auto-refreshes the graph when dirty sources change after analyze  
 
 Click a node for imports, callers, symbols, and source.
 

@@ -9,6 +9,11 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { extractGraph, extractGraphStream } from '../tools/extract-graph.mjs';
 import { prepareWorkspace } from '../tools/workspace.mjs';
+import {
+  checkFreshness,
+  collectGitChanges,
+  collectPackageHeads,
+} from '../tools/git-changes.mjs';
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -62,17 +67,116 @@ function persistWorkspaceSnapshot(eventOrResult) {
     path.join(dir, 'endpoints.json'),
     JSON.stringify(eventOrResult.endpoints || { endpoints: [], calls: [] }, null, 2),
   );
+  const packages = eventOrResult.packages || [];
+  const packageHeads = eventOrResult.packageHeads || collectPackageHeads(packages);
   fs.writeFileSync(
     path.join(dir, 'meta.json'),
     JSON.stringify({
       repo: eventOrResult.repo || path.basename(eventOrResult.root),
       root: eventOrResult.root,
-      packages: eventOrResult.packages || [],
+      packages,
       missing: eventOrResult.missing || [],
       analyzedAt: new Date().toISOString(),
+      packageHeads,
     }, null, 2),
   );
   setWorkspaceState(eventOrResult);
+}
+
+function packagesForRoot(root) {
+  const snap = root ? loadWorkspaceSnapshot(root) : null;
+  if (snap?.packages?.length) return { packages: snap.packages, meta: snap, graph: snap.graph };
+  if (state.root === root && state.packages?.length) {
+    return {
+      packages: state.packages,
+      meta: { root: state.root, packages: state.packages, packageHeads: {} },
+      graph: readJson('graph.json'),
+    };
+  }
+  if (root && fs.existsSync(root)) {
+    const workspace = prepareWorkspace(root);
+    return { packages: workspace.packages, meta: { root, packages: workspace.packages, packageHeads: {} }, graph: null };
+  }
+  return { packages: [], meta: null, graph: null };
+}
+
+const CODE_EXT = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs']);
+
+function resolveChangedAbs(packages, f) {
+  const pkg = packages.find((p) => (p.prefix || '') === (f.prefix || ''))
+    || packages.find((p) => p.prefix && f.graphId.startsWith(`${p.prefix}/`))
+    || packages.find((p) => !p.prefix);
+  if (!pkg?.root) return null;
+  return path.join(pkg.root, f.path);
+}
+
+/** True when a JS/TS change on disk is newer than the last analyze (imports/edges may be stale). */
+function sourcesNewerThanAnalyze(packages, files, analyzedAt) {
+  if (!analyzedAt) return [];
+  const cutoff = Date.parse(analyzedAt);
+  if (!Number.isFinite(cutoff)) return [];
+  const newer = [];
+  for (const f of files) {
+    if (f.status === 'D') continue;
+    if (!CODE_EXT.has(path.extname(f.path))) continue;
+    const abs = resolveChangedAbs(packages, f);
+    if (!abs || !fs.existsSync(abs)) continue;
+    try {
+      // 1.5s slack so analyze finishing doesn't immediately re-flag the same files.
+      if (fs.statSync(abs).mtimeMs > cutoff + 1500) newer.push(f.graphId);
+    } catch { /* ignore */ }
+  }
+  return newer;
+}
+
+function buildGitChangesResponse(root, baseHint) {
+  const { packages, meta, graph } = packagesForRoot(root);
+  if (!packages.length) {
+    return { ok: false, error: 'No packages for workspace', files: [], packages: [], stale: false };
+  }
+  const pkgChanges = collectGitChanges(packages, { base: baseHint || undefined });
+  const files = pkgChanges.flatMap((p) => p.files);
+  const nodeIds = new Set((graph?.nodes || []).map((n) => n.id));
+  // Only JS/TS can appear in the graph — ignore docs/assets in the "missing" nag.
+  const missingFromGraph = files.filter((f) => {
+    if (f.status === 'D' || !nodeIds.size || nodeIds.has(f.graphId)) return false;
+    if (!CODE_EXT.has(path.extname(f.path))) return false;
+    // Ignore bogus paths that aren't on disk (parse glitches, mid-flight deletes).
+    const abs = resolveChangedAbs(packages, f);
+    if (abs && !fs.existsSync(abs)) return false;
+    return true;
+  });
+  const freshness = checkFreshness(packages, meta?.packageHeads || {});
+  const sourcesNewer = sourcesNewerThanAnalyze(packages, files, meta?.analyzedAt);
+  // Stale when HEADs moved, new source files aren't in the graph, or dirty
+  // sources were edited after the snapshot (import edges go stale silently).
+  const stale = freshness.stale || missingFromGraph.length > 0 || sourcesNewer.length > 0;
+  return {
+    ok: true,
+    root,
+    packages: pkgChanges.map((p) => ({
+      name: p.name,
+      prefix: p.prefix,
+      root: p.root,
+      branch: p.branch,
+      base: p.base,
+      head: p.head,
+      fileCount: p.files.length,
+    })),
+    files,
+    missingFromGraph: missingFromGraph.map((f) => f.graphId),
+    sourcesNewer,
+    stale,
+    staleReason: freshness.stale
+      ? 'head'
+      : missingFromGraph.length
+        ? 'missing'
+        : sourcesNewer.length
+          ? 'sources'
+          : null,
+    stalePackages: freshness.packages,
+    analyzedAt: meta?.analyzedAt || null,
+  };
 }
 
 function loadWorkspaceSnapshot(root) {
@@ -98,6 +202,8 @@ function loadWorkspaceSnapshot(root) {
       root: meta.root || root,
       repo: meta.repo || graph.repo || path.basename(root),
       packages: meta.packages || [],
+      packageHeads: meta.packageHeads || {},
+      analyzedAt: meta.analyzedAt || null,
       graph,
       endpoints,
     };
@@ -380,6 +486,18 @@ app.get('/api/workspace', (req, res) => {
   const snap = loadWorkspaceSnapshot(root);
   if (!snap) return res.status(404).json({ error: 'No saved workspace for that root' });
   res.json(snap);
+});
+
+app.get('/api/git/changes', (req, res) => {
+  const root = req.query.root ? String(req.query.root) : state.root;
+  if (!root) return res.status(400).json({ error: 'Missing root' });
+  const base = req.query.base ? String(req.query.base) : undefined;
+  try {
+    res.json(buildGitChangesResponse(root, base));
+  } catch (err) {
+    console.error('[git/changes]', err);
+    res.status(500).json({ ok: false, error: err.message || String(err) });
+  }
 });
 
 app.get('/api/workspaces', (_req, res) => {
