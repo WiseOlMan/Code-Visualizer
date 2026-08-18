@@ -64,6 +64,23 @@ export class CodeExplorer extends CodeGraphEngine {
                   {v.gitSummary}
                 </div>
               )}
+              <form
+                onSubmit={(e) => { e.preventDefault(); v.submitBranch(); }}
+                style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 'var(--space-3)' }}
+              >
+                <input
+                  className="input"
+                  value={v.branchInput}
+                  onChange={v.onBranchInput}
+                  disabled={v.branchBusy}
+                  placeholder="Paste branch or org/repo@branch"
+                  title="Branch name for this repo, or owner/repo@branch / GitHub tree URL for another"
+                  style={{ width: '100%', fontSize: 11, padding: '5px 8px', minHeight: 28 }}
+                />
+                {v.branchError && (
+                  <div style={{ fontSize: 10.5, color: '#ff8a95', lineHeight: 1.35 }}>{v.branchError}</div>
+                )}
+              </form>
             </div>
 
             {v.gitStale && v.onReanalyze && (
@@ -285,13 +302,52 @@ export class CodeExplorer extends CodeGraphEngine {
 
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
               {v.panelTab === 'source' ? (
-                sel.hasCode ? (
+                sel.diffLines?.length ? (
+                  <div style={{
+                    margin: 0, padding: '6px 0', borderRadius: 'var(--radius-md)',
+                    background: 'var(--color-neutral-900)', color: 'var(--color-neutral-200)',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, lineHeight: 1.55,
+                    overflow: 'auto', flex: 1, boxShadow: 'var(--shadow-sm)',
+                  }}>
+                    {sel.codeDiff?.base && (
+                      <div style={{
+                        padding: '4px 10px 8px', fontSize: 10.5, color: 'var(--color-neutral-500)',
+                        borderBottom: '1px solid var(--color-neutral-800)', marginBottom: 4,
+                      }}>
+                        vs {sel.codeDiff.base}
+                      </div>
+                    )}
+                    {sel.diffLines.map((line, i) => {
+                      const bg = line.type === 'add' ? 'rgba(46,255,122,0.14)'
+                        : line.type === 'del' ? 'rgba(255,77,94,0.16)'
+                        : 'transparent';
+                      const fg = line.type === 'add' ? '#9dffc0'
+                        : line.type === 'del' ? '#ffb0b8'
+                        : 'var(--color-neutral-300)';
+                      const mark = line.type === 'add' ? '+' : line.type === 'del' ? '−' : ' ';
+                      const markColor = line.type === 'add' ? '#2EFF7A'
+                        : line.type === 'del' ? '#FF4D5E'
+                        : 'var(--color-neutral-700)';
+                      return (
+                        <div key={i} style={{
+                          display: 'flex', gap: 8, padding: '0 10px',
+                          background: bg, color: fg, whiteSpace: 'pre',
+                        }}>
+                          <span style={{ flex: 'none', width: 10, color: markColor, userSelect: 'none' }}>{mark}</span>
+                          <span style={{ flex: 1, minWidth: 0 }}>{line.text || ' '}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : sel.hasCode ? (
                   <pre style={{
                     margin: 0, padding: 'var(--space-3)', borderRadius: 'var(--radius-md)',
                     background: 'var(--color-neutral-900)', color: 'var(--color-neutral-200)',
                     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, lineHeight: 1.6,
                     overflow: 'auto', flex: 1, whiteSpace: 'pre', boxShadow: 'var(--shadow-sm)',
                   }}>{sel.code}</pre>
+                ) : sel.gitChanged ? (
+                  <div style={{ fontSize: 12.5, color: 'var(--color-neutral-500)' }}>Loading diff…</div>
                 ) : (
                   <div style={{ fontSize: 12.5, color: 'var(--color-neutral-500)' }}>Loading source…</div>
                 )

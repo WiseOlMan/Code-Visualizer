@@ -289,9 +289,10 @@ function folderRects(ns) {
 
 export class CodeGraphEngine extends React.Component {
   state = {
-    query: '', selId: null, code: null, sigTick: 0, labelTick: 0, panelTab: 'details',
+    query: '', selId: null, code: null, codeDiff: null, sigTick: 0, labelTick: 0, panelTab: 'details',
     folderDepth: 2, hideTests: true, hideGenerated: true,
     showCalls: true, highlightGit: true, onlyGit: false,
+    branchInput: '',
     stats: '', repoName: '',
     gitSummary: '', gitStale: false, gitMissing: 0, gitSourcesNewer: 0, gitStaleReason: null, gitFileCount: 0,
   };
@@ -304,6 +305,7 @@ export class CodeGraphEngine extends React.Component {
     this.nodes = []; this.links = []; this.byId = {};
     this.hover = null; this.drag = null; this.pan = null;
     this.alpha = 1;
+    if (p.initialOnlyGit) this.state = { ...this.state, onlyGit: true };
   }
 
   componentDidMount() {
@@ -411,7 +413,16 @@ export class CodeGraphEngine extends React.Component {
       this.applyGitOverlay(this.props.gitInfo);
     }
     if (this.props.gitInfo !== prev.gitInfo) {
+      this.invalidateSourceDiffs();
       this.applyGitOverlay(this.props.gitInfo);
+      const sel = this.state.selId && this.byId[this.state.selId];
+      if (sel?.gitChanged) {
+        this.sourceDiff(sel.id).then((d) => {
+          if (this.state.selId === sel.id) this.setState({ codeDiff: d });
+        });
+      } else if (this.state.codeDiff) {
+        this.setState({ codeDiff: null });
+      }
     }
     this.drawLegend();
   }
@@ -452,6 +463,32 @@ export class CodeGraphEngine extends React.Component {
     return this._pending[id];
   }
 
+  sourceDiff(id) {
+    this._diff = this._diff || {};
+    this._diffPending = this._diffPending || {};
+    if (this._diff[id] !== undefined) return Promise.resolve(this._diff[id]);
+    if (this._diffPending[id]) return this._diffPending[id];
+    const root = this.props.workspaceRoot;
+    let url = '/api/source/diff?path=' + encodeURIComponent(id);
+    if (root) url += '&root=' + encodeURIComponent(root);
+    this._diffPending[id] = fetch(url)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then((d) => {
+        const payload = d?.lines?.length ? d : null;
+        this._diff[id] = payload;
+        delete this._diffPending[id];
+        return payload;
+      });
+    return this._diffPending[id];
+  }
+
+  /** Drop cached diffs when the change set moves so Source stays honest. */
+  invalidateSourceDiffs() {
+    this._diff = {};
+    this._diffPending = {};
+  }
+
   sig(fileId, sym) {
     this._sigs = this._sigs || {};
     const key = fileId + '#' + sym;
@@ -479,6 +516,23 @@ export class CodeGraphEngine extends React.Component {
       if (l.off) continue;
       const other = l.s === node ? l.t : l.t === node ? l.s : null;
       if (!other || other.off || seen.has(other.id)) continue;
+      seen.add(other.id);
+      out.push(other);
+    }
+    return out;
+  }
+
+  /** Full import/call neighborhood, ignoring onlyGit/hide filters — used to reveal
+   *  connected files when hovering a branch-changed node. */
+  graphNeighbors(node) {
+    if (!node) return [];
+    const out = [];
+    const seen = new Set([node.id]);
+    const showCalls = this.state.showCalls;
+    for (const l of this.links || []) {
+      if (l.kind === 'call' && !showCalls) continue;
+      const other = l.s === node ? l.t : l.t === node ? l.s : null;
+      if (!other || seen.has(other.id)) continue;
       seen.add(other.id);
       out.push(other);
     }
@@ -542,7 +596,11 @@ export class CodeGraphEngine extends React.Component {
     this._needsFit = false;
     this._settle = 0;
     if (node) this.fitSelection(node);
-    this.setState({ selId: id, code: null, panelTab: 'details' }, () => {
+    const openSource = !!(node && node.gitChanged);
+    this.setState({
+      selId: id, code: null, codeDiff: null,
+      panelTab: openSource ? 'source' : 'details',
+    }, () => {
       if (!node || this.state.selId !== node.id) return;
       this._needsFit = false;
       this._forceFitAll = false;
@@ -557,6 +615,11 @@ export class CodeGraphEngine extends React.Component {
     });
     if (!node) { this.kick(); return; }
     this.source(node.id).then(t => { if (this.state.selId === node.id) this.setState({ code: t }); });
+    if (node.gitChanged) {
+      this.sourceDiff(node.id).then((d) => {
+        if (this.state.selId === node.id) this.setState({ codeDiff: d });
+      });
+    }
     this.loadSignatures(node);
     this.kick();
   }
@@ -568,7 +631,10 @@ export class CodeGraphEngine extends React.Component {
 
   labelRing() {
     const focus = this.hover || (this.state.selId && this.byId[this.state.selId]);
-    if (!focus || focus.off) return [];
+    if (!focus || (focus.off && !focus.gitChanged)) return [];
+    // Changed-file focus: cycle through the real graph neighborhood, not just
+    // the filtered "changed only" set.
+    if (focus.gitChanged) return [focus, ...this.graphNeighbors(focus)];
     return this.neighborsOf(focus);
   }
 
@@ -661,14 +727,6 @@ export class CodeGraphEngine extends React.Component {
   }
 
   applyGitOverlay(gitInfo) {
-    // Drop deletion ghosts from a previous overlay before rebuilding.
-    if (this._gitGhostIds?.length) {
-      const ghosts = new Set(this._gitGhostIds);
-      this.nodes = (this.nodes || []).filter((n) => !ghosts.has(n.id));
-      this.byId = Object.fromEntries(this.nodes.map((n) => [n.id, n]));
-      this._gitGhostIds = [];
-    }
-
     const files = gitInfo?.files || [];
     const byStatus = new Map();
     const rank = { A: 3, M: 2, D: 1 };
@@ -678,6 +736,31 @@ export class CodeGraphEngine extends React.Component {
       if (!st) continue;
       const prev = byStatus.get(f.graphId);
       if (!prev || (rank[st] || 0) > (rank[prev] || 0)) byStatus.set(f.graphId, st);
+    }
+
+    const overlaySig = [...byStatus.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([id, st]) => `${id}:${st}`).join('|')
+      + `|stale:${gitInfo?.stale ? 1 : 0}:${gitInfo?.staleReason || ''}`
+      + `|miss:${(gitInfo?.missingFromGraph || []).join(',')}`;
+    if (overlaySig === this._gitOverlaySig && this.nodes?.length) {
+      // Same change set — refresh banner fields only, don't rebuild nodes/layout.
+      const missing = gitInfo?.missingFromGraph?.length || 0;
+      this.setState({
+        gitStale: !!gitInfo?.stale,
+        gitMissing: missing,
+        gitSourcesNewer: gitInfo?.sourcesNewer?.length || 0,
+        gitStaleReason: gitInfo?.staleReason || null,
+      });
+      return;
+    }
+    this._gitOverlaySig = overlaySig;
+
+    // Drop deletion ghosts from a previous overlay before rebuilding.
+    if (this._gitGhostIds?.length) {
+      const ghosts = new Set(this._gitGhostIds);
+      this.nodes = (this.nodes || []).filter((n) => !ghosts.has(n.id));
+      this.byId = Object.fromEntries(this.nodes.map((n) => [n.id, n]));
+      this._gitGhostIds = [];
     }
 
     for (const n of this.nodes || []) {
@@ -732,15 +815,36 @@ export class CodeGraphEngine extends React.Component {
       gitSummary = `${br}${base} · ${parts.join(' · ') || `${byStatus.size} changed`}`;
       if (missing) gitSummary += ` · ${missing} not in graph`;
     }
-    this.setState({
+    const gitFileCount = byStatus.size;
+    const patch = {
       gitSummary,
       gitStale: !!gitInfo?.stale,
       gitMissing: missing,
       gitSourcesNewer: sourcesNewer,
       gitStaleReason: gitInfo?.staleReason || null,
-      gitFileCount: byStatus.size,
+      gitFileCount,
       gitCounts: counts,
-    }, () => this.applyFilter());
+    };
+    // Auto: colors on when there are edits, off when the diff is empty.
+    // Manual toggle pins until the change set clears, then auto resumes.
+    if (!gitFileCount) {
+      patch.highlightGit = false;
+      patch.onlyGit = false;
+      this._gitHighlightPinned = null;
+    } else if (this._gitHighlightPinned == null) {
+      patch.highlightGit = true;
+      if (this.props.initialOnlyGit) patch.onlyGit = true;
+    } else {
+      patch.highlightGit = this._gitHighlightPinned;
+    }
+    this.setState(patch, () => {
+      this.applyFilter();
+      if (this.props.initialOnlyGit && gitFileCount && !this._focusedGitOnce) {
+        this._focusedGitOnce = true;
+        const ns = (this.nodes || []).filter((n) => n.gitChanged && !n.off);
+        if (ns.length) this.fitNodes(ns, { pad: 64, maxK: 2.8 });
+      }
+    });
   }
 
   applyFilter() {
@@ -1189,13 +1293,38 @@ export class CodeGraphEngine extends React.Component {
     const sel = this.state.selId ? this.byId[this.state.selId] : null;
     // Hover or selection dims to the neighborhood; Tab cycles which title is shown.
     const focus = this.hover || sel;
+    // Hovering/selecting a changed file reveals its real connections (even when
+    // "changed only" has filtered them out) and labels them.
+    const revealGit = !!(focus && focus.gitChanged);
+    const revealed = new Set();
+    if (revealGit) {
+      revealed.add(focus.id);
+      for (const n of this.graphNeighbors(focus)) revealed.add(n.id);
+    }
     const near = new Set();
     if (focus) {
       for (const n of this.neighborsOf(focus)) near.add(n.id);
+      for (const id of revealed) near.add(id);
     }
     const labeled = this.labeledNode();
 
+    const linkList = [];
+    const seenLink = new Set();
     for (const l of (this.activeLinks || this.links)) {
+      seenLink.add(l);
+      linkList.push(l);
+    }
+    if (revealGit) {
+      for (const l of this.links) {
+        if (seenLink.has(l)) continue;
+        if (l.kind === 'call' && !this.state.showCalls) continue;
+        if (l.s !== focus && l.t !== focus) continue;
+        if (!revealed.has(l.s.id) || !revealed.has(l.t.id)) continue;
+        linkList.push(l);
+      }
+    }
+
+    for (const l of linkList) {
       const isCall = l.kind === 'call';
       const on = focus ? (l.s === focus || l.t === focus) : true;
       const dim = q && !(l.s.id.toLowerCase().includes(q) || l.t.id.toLowerCase().includes(q));
@@ -1243,23 +1372,39 @@ export class CodeGraphEngine extends React.Component {
 
     const labels = [];
     const hlGit = this.state.highlightGit;
+    const drawNodes = [];
+    const seenNode = new Set();
     for (const n of (this.active || this.nodes)) {
+      seenNode.add(n.id);
+      drawNodes.push(n);
+    }
+    if (revealGit) {
+      for (const id of revealed) {
+        if (seenNode.has(id)) continue;
+        const n = this.byId[id];
+        if (n) drawNodes.push(n);
+      }
+    }
+    for (const n of drawNodes) {
       const match = !q || n.id.toLowerCase().includes(q);
       const on = !focus || near.has(n.id);
+      const peek = revealGit && revealed.has(n.id);
       let alpha = (on ? 1 : 0.16) * (match ? 1 : 0.2);
-      // With branch colors on, mute unchanged so folder greens never look like adds.
-      if (hlGit && !n.gitChanged) alpha *= 0.28;
+      // With branch colors on, mute unchanged so folder greens never look like adds —
+      // unless this neighbor was just revealed by hovering a changed file.
+      if (hlGit && !n.gitChanged && !peek) alpha *= 0.28;
       if (hlGit && n.gitStatus === 'D') alpha *= 0.85;
-      const folderFill = (hlGit && !n.gitChanged) ? muteFolderColor(n.color) : n.color;
+      const folderFill = (hlGit && !n.gitChanged && !peek) ? muteFolderColor(n.color) : n.color;
       if (n.isEndpoint) {
         const gitFill = hlGit && n.gitStatus === 'A' ? GIT.add
           : hlGit && n.gitStatus === 'D' ? GIT.del
-          : (hlGit && !n.gitChanged ? folderFill : null);
+          : (hlGit && !n.gitChanged && !peek ? folderFill : null);
         const emph = (n === sel || n === labeled) ? INK.text
           : (hlGit && n.gitStatus === 'M') ? GIT.edit
           : (hlGit && n.gitStatus === 'A') ? '#12c45a'
           : (hlGit && n.gitStatus === 'D') ? '#ff8a95'
-          : (q && match && q.length > 1 ? INK.text : null);
+          : (peek && !n.gitChanged ? INK.text : null)
+          || (q && match && q.length > 1 ? INK.text : null);
         drawSocket(ctx, n, k, alpha, emph, gitFill, hlGit && n.gitStatus === 'D');
       } else {
         ctx.globalAlpha = alpha;
@@ -1272,6 +1417,8 @@ export class CodeGraphEngine extends React.Component {
         ctx.fill();
         if (n === sel || n === labeled) {
           ctx.lineWidth = 2.5 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.95; ctx.stroke();
+        } else if (peek && !n.gitChanged) {
+          ctx.lineWidth = 1.6 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.85; ctx.stroke();
         } else if (hlGit && n.gitStatus === 'M') {
           // Edited = bright green ring
           ctx.lineWidth = 2.4 / k; ctx.strokeStyle = GIT.edit; ctx.globalAlpha = 1; ctx.stroke();
@@ -1285,10 +1432,14 @@ export class CodeGraphEngine extends React.Component {
         }
       }
       // One neighborhood title at a time (Tab / Shift+Tab cycles). Search hits still collide-cull.
+      // Revealed neighbors of a changed file all get names while hovered.
       const primary = labeled && n === labeled;
       const searchHit = q && q.length > 1 && match;
       const gitHit = hlGit && n.gitChanged && (this.state.onlyGit || !q);
-      if (primary || searchHit || gitHit) labels.push({ n, on, primary, searchHit: searchHit || gitHit });
+      const revealHit = peek && n !== focus;
+      if (primary || searchHit || gitHit || revealHit) {
+        labels.push({ n, on, primary, searchHit: searchHit || gitHit || revealHit });
+      }
     }
 
     // Draw primary label last so it wins overlaps against search hits
@@ -1378,6 +1529,19 @@ export class CodeGraphEngine extends React.Component {
 
       const meta = (this.endpointById || {})[sel.id];
       const code = this.state.code;
+      const codeDiff = this.state.codeDiff;
+      const diffLines = codeDiff?.lines || null;
+      const addN = diffLines ? diffLines.filter((l) => l.type === 'add').length : 0;
+      const delN = diffLines ? diffLines.filter((l) => l.type === 'del').length : 0;
+      let codeMeta = '';
+      if (diffLines?.length) {
+        const bits = [];
+        if (addN) bits.push(`+${addN}`);
+        if (delN) bits.push(`−${delN}`);
+        codeMeta = bits.length ? bits.join(' ') : 'diff';
+      } else if (code) {
+        codeMeta = code.split('\n').length + ' lines';
+      }
       selVal = {
         label: sel.label, path: sel.id, inDeg: incoming.length, outDeg: outgoing.length,
         endpoint: meta ? { url: meta.url, methods: (meta.methods || []).map(name => ({ name })) } : null,
@@ -1385,8 +1549,10 @@ export class CodeGraphEngine extends React.Component {
         callsOut, hasCallsOut: callsOut.length > 0, callsOutCount: callsOut.length,
         incoming, outgoing, noIncoming: incoming.length === 0, noOutgoing: outgoing.length === 0,
         symbolRows, hasSymbols: symbolRows.length > 0,
-        code, codeMeta: code ? code.split('\n').length + ' lines' : '',
-        hasCode: !!code,
+        code, codeDiff, diffLines, codeMeta,
+        hasCode: !!(diffLines?.length || code),
+        gitChanged: !!sel.gitChanged,
+        gitStatus: sel.gitStatus || null,
       };
     }
     const counts = this.groupCounts || {};
@@ -1437,7 +1603,11 @@ export class CodeGraphEngine extends React.Component {
       gitStaleReason: this.state.gitStaleReason,
       gitFileCount: this.state.gitFileCount,
       gitCounts: this.state.gitCounts || { A: 0, M: 0, D: 0 },
-      toggleHighlightGit: () => this.setState({ highlightGit: !this.state.highlightGit }, () => this.kick()),
+      toggleHighlightGit: () => {
+        const highlightGit = !this.state.highlightGit;
+        this._gitHighlightPinned = highlightGit;
+        this.setState({ highlightGit }, () => this.kick());
+      },
       toggleOnlyGit: () => this.setState({ onlyGit: !this.state.onlyGit }, () => {
         this.applyFilter();
         this.queueFit({ all: true });
@@ -1453,6 +1623,17 @@ export class CodeGraphEngine extends React.Component {
         });
       },
       onReanalyze: this.props.onReanalyze,
+      branchInput: this.state.branchInput || '',
+      branchBusy: !!this.props.branchBusy,
+      branchError: this.props.branchError || '',
+      onBranchInput: (e) => this.setState({ branchInput: e.target.value }),
+      submitBranch: () => {
+        const value = (this.state.branchInput || '').trim();
+        if (!value || !this.props.onSwitchBranch) return;
+        Promise.resolve(this.props.onSwitchBranch(value)).then((ok) => {
+          if (ok) this.setState({ branchInput: '' });
+        });
+      },
       refit: () => this.queueFit({ all: true }),
       groups: gs ? gs.keys.map(k => ({
         id: k, label: gs.label(k), color: gs.colorOf(k), count: counts[k] || 0,

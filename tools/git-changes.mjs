@@ -189,3 +189,90 @@ export function checkFreshness(packages, packageHeads = {}) {
   }
   return { stale: stalePackages.length > 0, packages: stalePackages };
 }
+
+function parseUnifiedDiff(text) {
+  const lines = [];
+  if (!text) return lines;
+  for (const raw of text.split('\n')) {
+    if (
+      raw.startsWith('diff ') ||
+      raw.startsWith('index ') ||
+      raw.startsWith('---') ||
+      raw.startsWith('+++') ||
+      raw.startsWith('@@') ||
+      raw.startsWith('new file') ||
+      raw.startsWith('deleted file') ||
+      raw.startsWith('similarity ') ||
+      raw.startsWith('rename ') ||
+      raw.startsWith('\\')
+    ) continue;
+    if (raw.startsWith('+')) lines.push({ type: 'add', text: raw.slice(1) });
+    else if (raw.startsWith('-')) lines.push({ type: 'del', text: raw.slice(1) });
+    else lines.push({ type: 'ctx', text: raw.startsWith(' ') ? raw.slice(1) : raw });
+  }
+  // Drop trailing empty ctx from split on final newline
+  while (lines.length && lines[lines.length - 1].type === 'ctx' && lines[lines.length - 1].text === '') {
+    lines.pop();
+  }
+  return lines;
+}
+
+function fileTracked(cwd, relPath) {
+  const out = git(cwd, ['ls-files', '--', relPath]);
+  return !!(out && out.split('\n').some((l) => l === relPath));
+}
+
+/**
+ * Line-level diff for a repo-relative path vs the merge base (incl. WIP).
+ * New untracked files → all additions. Deleted → all deletions from base tip.
+ * @returns {{ base: string|null, status: string, lines: Array<{type:'ctx'|'add'|'del', text:string}> } | null}
+ */
+export function fileDiff(cwd, relPath, opts = {}) {
+  if (!cwd || !relPath || !isGitRepo(cwd)) return null;
+  const base = opts.base || resolveBaseBranch(cwd);
+  const abs = path.join(cwd, relPath);
+  const exists = fs.existsSync(abs) && fs.statSync(abs).isFile();
+  const tracked = fileTracked(cwd, relPath);
+
+  if (!exists && !tracked) return null;
+
+  // Untracked / brand-new on disk → whole file is an addition.
+  if (exists && !tracked) {
+    const text = fs.readFileSync(abs, 'utf8');
+    const lines = text.split('\n').map((text) => ({ type: 'add', text }));
+    if (lines.length && lines[lines.length - 1].text === '') lines.pop();
+    return { base, status: 'A', lines };
+  }
+
+  // Prefer full change vs base (branch commits + working tree). Fall back to HEAD.
+  let diffText = null;
+  if (base) {
+    diffText = git(cwd, ['diff', '-U9999', '--no-color', `${base}`, '--', relPath]);
+  }
+  if (diffText == null || diffText === '') {
+    const againstHead = git(cwd, ['diff', '-U9999', '--no-color', 'HEAD', '--', relPath]);
+    if (againstHead) diffText = againstHead;
+  }
+
+  // Deleted from tree but still known to git
+  if (!exists && tracked) {
+    const tip = base || 'HEAD';
+    const old = git(cwd, ['show', `${tip}:${relPath}`]);
+    if (old == null) return { base, status: 'D', lines: [] };
+    const lines = old.split('\n').map((text) => ({ type: 'del', text }));
+    if (lines.length && lines[lines.length - 1].text === '') lines.pop();
+    return { base, status: 'D', lines };
+  }
+
+  const lines = parseUnifiedDiff(diffText || '');
+  if (!lines.length) {
+    // No textual diff (binary / unchanged vs base) — still return empty for UI.
+    return { base, status: 'M', lines: [] };
+  }
+  const hasAdd = lines.some((l) => l.type === 'add');
+  const hasDel = lines.some((l) => l.type === 'del');
+  const hasCtx = lines.some((l) => l.type === 'ctx');
+  // Pure add/del only when the other side (and context) is absent — else it's an edit.
+  const status = hasAdd && !hasDel && !hasCtx ? 'A' : hasDel && !hasAdd && !hasCtx ? 'D' : 'M';
+  return { base, status, lines };
+}

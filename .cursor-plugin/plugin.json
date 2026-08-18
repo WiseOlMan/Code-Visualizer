@@ -1,0 +1,25 @@
+{
+  "name": "code-explorer",
+  "displayName": "Code Explorer",
+  "version": "1.0.0",
+  "description": "Interactive JS/TS import graph. Cloud agents and humans run code-explorer serve against the working tree to screenshot branch-change impact.",
+  "author": {
+    "name": "David Hadwin"
+  },
+  "homepage": "https://github.com/WiseOlMan/Code-Visualizer",
+  "repository": "https://github.com/WiseOlMan/Code-Visualizer",
+  "license": "MIT",
+  "keywords": [
+    "code-graph",
+    "imports",
+    "cloud-agent",
+    "diff"
+  ],
+  "category": "developer-tools",
+  "tags": [
+    "visualization",
+    "code-review",
+    "git"
+  ],
+  "skills": "./skills/"
+}

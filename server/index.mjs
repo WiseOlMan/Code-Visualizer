@@ -13,14 +13,29 @@ import {
   checkFreshness,
   collectGitChanges,
   collectPackageHeads,
+  fileDiff,
+  resolveBaseBranch,
 } from '../tools/git-changes.mjs';
+import {
+  checkoutBranch,
+  checkoutWorkspace,
+  expandHome,
+  findLocalRepo,
+  parseCheckoutTarget,
+} from '../tools/git-checkout.mjs';
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const DATA_DIR = path.join(ROOT, 'data');
+const DATA_DIR = process.env.CODE_EXPLORER_DATA
+  ? path.resolve(process.env.CODE_EXPLORER_DATA)
+  : path.join(ROOT, 'data');
 const WORKSPACES_DIR = path.join(DATA_DIR, 'workspaces');
 const PORT = Number(process.env.PORT || 8787);
+const SERVE_UI = process.env.CODE_EXPLORER_SERVE_UI === '1';
+const BOOTSTRAP_REPO = process.env.CODE_EXPLORER_REPO
+  ? path.resolve(process.env.CODE_EXPLORER_REPO)
+  : null;
 
 const RECENT_PATH = path.join(DATA_DIR, 'recent.json');
 const SESSION_PATH = path.join(DATA_DIR, 'session.json');
@@ -69,6 +84,11 @@ function persistWorkspaceSnapshot(eventOrResult) {
   );
   const packages = eventOrResult.packages || [];
   const packageHeads = eventOrResult.packageHeads || collectPackageHeads(packages);
+  let sourceFingerprint = {};
+  try {
+    const files = collectGitChanges(packages).flatMap((p) => p.files);
+    sourceFingerprint = fingerprintSourceFiles(packages, files);
+  } catch { /* ignore */ }
   fs.writeFileSync(
     path.join(dir, 'meta.json'),
     JSON.stringify({
@@ -78,6 +98,7 @@ function persistWorkspaceSnapshot(eventOrResult) {
       missing: eventOrResult.missing || [],
       analyzedAt: new Date().toISOString(),
       packageHeads,
+      sourceFingerprint,
     }, null, 2),
   );
   setWorkspaceState(eventOrResult);
@@ -110,23 +131,46 @@ function resolveChangedAbs(packages, f) {
   return path.join(pkg.root, f.path);
 }
 
-/** True when a JS/TS change on disk is newer than the last analyze (imports/edges may be stale). */
-function sourcesNewerThanAnalyze(packages, files, analyzedAt) {
-  if (!analyzedAt) return [];
-  const cutoff = Date.parse(analyzedAt);
-  if (!Number.isFinite(cutoff)) return [];
-  const newer = [];
-  for (const f of files) {
-    if (f.status === 'D') continue;
-    if (!CODE_EXT.has(path.extname(f.path))) continue;
+/** Snapshot of branch/WIP JS/TS files at analyze time — used to detect real edits. */
+function fingerprintSourceFiles(packages, files) {
+  const fp = {};
+  for (const f of files || []) {
+    if (!f.graphId) continue;
+    if (!CODE_EXT.has(path.extname(f.path || f.graphId))) continue;
+    if (f.status === 'D') {
+      fp[f.graphId] = 'D';
+      continue;
+    }
     const abs = resolveChangedAbs(packages, f);
     if (!abs || !fs.existsSync(abs)) continue;
     try {
-      // 1.5s slack so analyze finishing doesn't immediately re-flag the same files.
-      if (fs.statSync(abs).mtimeMs > cutoff + 1500) newer.push(f.graphId);
+      const st = fs.statSync(abs);
+      fp[f.graphId] = `${Math.round(st.mtimeMs)}:${st.size}:${f.status || 'M'}`;
     } catch { /* ignore */ }
   }
-  return newer;
+  return fp;
+}
+
+/**
+ * Files whose fingerprint moved since the last analyze.
+ * Legacy snapshots without sourceFingerprint never flag "sources" (avoids mtime loops).
+ */
+function sourcesChangedSinceAnalyze(packages, files, savedFp) {
+  if (!savedFp || typeof savedFp !== 'object') return [];
+  const current = fingerprintSourceFiles(packages, files);
+  const changed = [];
+  for (const [id, cur] of Object.entries(current)) {
+    if (savedFp[id] !== cur) changed.push(id);
+  }
+  // New code files in the change set that weren't fingerprinted at analyze.
+  for (const f of files || []) {
+    if (!f.graphId || f.status === 'D') continue;
+    if (!CODE_EXT.has(path.extname(f.path || ''))) continue;
+    if (savedFp[f.graphId] == null && current[f.graphId] && !changed.includes(f.graphId)) {
+      changed.push(f.graphId);
+    }
+  }
+  return changed;
 }
 
 function buildGitChangesResponse(root, baseHint) {
@@ -147,9 +191,9 @@ function buildGitChangesResponse(root, baseHint) {
     return true;
   });
   const freshness = checkFreshness(packages, meta?.packageHeads || {});
-  const sourcesNewer = sourcesNewerThanAnalyze(packages, files, meta?.analyzedAt);
-  // Stale when HEADs moved, new source files aren't in the graph, or dirty
-  // sources were edited after the snapshot (import edges go stale silently).
+  const sourcesNewer = sourcesChangedSinceAnalyze(packages, files, meta?.sourceFingerprint);
+  // Stale when HEADs moved, new source files aren't in the graph, or fingerprinted
+  // sources actually changed after the snapshot (not mere clock/mtime noise).
   const stale = freshness.stale || missingFromGraph.length > 0 || sourcesNewer.length > 0;
   return {
     ok: true,
@@ -204,6 +248,7 @@ function loadWorkspaceSnapshot(root) {
       packages: meta.packages || [],
       packageHeads: meta.packageHeads || {},
       analyzedAt: meta.analyzedAt || null,
+      sourceFingerprint: meta.sourceFingerprint || null,
       graph,
       endpoints,
     };
@@ -281,11 +326,12 @@ function workspacePackages(rootHint) {
   return root ? [{ prefix: '', root }] : [];
 }
 
-function resolveSourcePath(rel, rootHint) {
+function resolveSourceHit(rel, rootHint) {
   if (!rel || rel.includes('..') || path.isAbsolute(rel)) return null;
   const packages = [...workspacePackages(rootHint)]
     .sort((a, b) => (b.prefix || '').length - (a.prefix || '').length);
 
+  let missing = null;
   for (const pkg of packages) {
     const prefix = (pkg.prefix || '').split(path.sep).join('/');
     let rest = rel;
@@ -293,12 +339,26 @@ function resolveSourcePath(rel, rootHint) {
       if (rel !== prefix && !rel.startsWith(prefix + '/')) continue;
       rest = rel === prefix ? '' : rel.slice(prefix.length + 1);
     }
+    if (!rest) continue;
     const abs = path.resolve(pkg.root, rest);
     const rootAbs = path.resolve(pkg.root);
     if (abs !== rootAbs && !abs.startsWith(rootAbs + path.sep)) continue;
-    if (fs.existsSync(abs) && fs.statSync(abs).isFile()) return abs;
+    const hit = {
+      abs,
+      pkgRoot: pkg.root,
+      repoRel: rest.split(path.sep).join('/'),
+      onDisk: fs.existsSync(abs) && fs.statSync(abs).isFile(),
+    };
+    if (hit.onDisk) return hit;
+    // Prefer longest prefix match for deleted files (diff via git blob).
+    if (!missing) missing = hit;
   }
-  return null;
+  return missing;
+}
+
+function resolveSourcePath(rel, rootHint) {
+  const hit = resolveSourceHit(rel, rootHint);
+  return hit?.onDisk ? hit.abs : null;
 }
 
 function readRecent() {
@@ -425,23 +485,63 @@ function normalizeGithubUrl(value) {
   return `https://github.com/${parts[0]}/${parts[1].replace(/\.git$/, '')}.git`;
 }
 
+async function cloneGithub(cloneUrl, branch) {
+  const name = cloneUrl.split('/').pop().replace(/\.git$/, '');
+  const dest = path.join(os.tmpdir(), 'code-explorer-clones', `${name}-${Date.now()}`);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  const args = ['clone', '--depth', '1'];
+  if (branch) args.push('--branch', branch, '--single-branch');
+  args.push(cloneUrl, dest);
+  await execFileAsync('git', args, {
+    timeout: 120_000,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  return dest;
+}
+
+function checkoutSearchRoots(activeRoot) {
+  const roots = [];
+  const push = (p) => { if (p && !roots.includes(p)) roots.push(p); };
+  push(activeRoot);
+  if (activeRoot) push(path.dirname(activeRoot));
+  for (const p of readRecent()) push(p);
+  for (const p of readRecent()) push(path.dirname(p));
+  push(path.join(os.homedir(), 'Documents', 'GitHub'));
+  push(path.join(os.homedir(), 'Documents'));
+  push(os.homedir());
+  return roots;
+}
+
 async function resolveTarget(target) {
   const value = target.trim();
   if (!value) throw new Error('Missing target');
 
-  if (isGithubUrl(value)) {
-    const url = normalizeGithubUrl(value);
-    const name = url.split('/').pop().replace(/\.git$/, '');
-    const dest = path.join(os.tmpdir(), 'code-explorer-clones', `${name}-${Date.now()}`);
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    await execFileAsync('git', ['clone', '--depth', '1', url, dest], {
-      timeout: 120_000,
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    return dest;
+  // GitHub URL or owner/repo@branch — find local checkout or clone (honour tree branch).
+  if (isGithubUrl(value) || /^[\w.-]+\/[\w.-]+[@#:].+$/.test(value) || /^git@github\.com:/i.test(value)) {
+    const parsed = parseCheckoutTarget(value);
+    if (parsed.kind === 'remote') {
+      const local = findLocalRepo(parsed.owner, parsed.repo, checkoutSearchRoots(null));
+      if (local) {
+        if (parsed.branch) checkoutBranch(local, parsed.branch);
+        return local;
+      }
+      return cloneGithub(parsed.cloneUrl, parsed.branch);
+    }
   }
 
-  const local = path.resolve(value.replace(/^~(?=$|\/)/, os.homedir()));
+  // Local path, optional @branch suffix
+  const pathParsed = (() => {
+    try { return parseCheckoutTarget(value); } catch { return null; }
+  })();
+  if (pathParsed?.kind === 'path') {
+    const local = expandHome(pathParsed.path);
+    if (!fs.existsSync(local)) throw new Error(`Path not found: ${local}`);
+    if (!fs.statSync(local).isDirectory()) throw new Error(`Not a directory: ${local}`);
+    if (pathParsed.branch) checkoutBranch(local, pathParsed.branch);
+    return local;
+  }
+
+  const local = expandHome(value);
   if (!fs.existsSync(local)) throw new Error(`Path not found: ${local}`);
   if (!fs.statSync(local).isDirectory()) throw new Error(`Not a directory: ${local}`);
   return local;
@@ -454,6 +554,14 @@ app.use(express.json({ limit: '1mb' }));
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, repo: state.repo, root: state.root });
+});
+
+app.get('/api/bootstrap', (_req, res) => {
+  const repo = BOOTSTRAP_REPO && fs.existsSync(BOOTSTRAP_REPO) ? BOOTSTRAP_REPO : null;
+  res.json({
+    repo,
+    changedOnly: process.env.CODE_EXPLORER_CHANGED_ONLY === '1',
+  });
 });
 
 app.get('/api/browse', (req, res) => {
@@ -500,6 +608,75 @@ app.get('/api/git/changes', (req, res) => {
   }
 });
 
+/**
+ * Paste a branch name (current workspace), owner/repo@branch, or GitHub tree URL.
+ * Same-repo switches stay on the tab; other repos open (or reuse) another root.
+ */
+app.post('/api/git/checkout', async (req, res) => {
+  try {
+    const target = String(req.body?.target || req.body?.branch || '').trim();
+    const activeRoot = req.body?.root ? String(req.body.root) : state.root;
+    if (!target) return res.status(400).json({ ok: false, error: 'Missing target' });
+
+    const parsed = parseCheckoutTarget(target);
+
+    if (parsed.kind === 'branch') {
+      if (!activeRoot) {
+        return res.status(400).json({ ok: false, error: 'Open a repo first, or paste owner/repo@branch' });
+      }
+      const { packages } = packagesForRoot(activeRoot);
+      const result = checkoutWorkspace(packages.length ? packages : [{ root: activeRoot }], parsed.branch);
+      return res.json({
+        ok: true,
+        newTab: false,
+        root: activeRoot,
+        branch: result.branch,
+        switched: result.switched,
+        skipped: result.skipped,
+      });
+    }
+
+    if (parsed.kind === 'path') {
+      const local = expandHome(parsed.path);
+      if (!fs.existsSync(local) || !fs.statSync(local).isDirectory()) {
+        return res.status(404).json({ ok: false, error: `Path not found: ${local}` });
+      }
+      if (parsed.branch) checkoutBranch(local, parsed.branch);
+      const same = activeRoot && path.resolve(activeRoot) === path.resolve(local);
+      return res.json({
+        ok: true,
+        newTab: !same,
+        root: local,
+        branch: parsed.branch,
+        repo: path.basename(local),
+      });
+    }
+
+    // remote: prefer an existing local checkout, else clone
+    let root = findLocalRepo(parsed.owner, parsed.repo, checkoutSearchRoots(activeRoot));
+    let cloned = false;
+    if (root) {
+      if (parsed.branch) checkoutBranch(root, parsed.branch);
+    } else {
+      root = await cloneGithub(parsed.cloneUrl, parsed.branch);
+      cloned = true;
+    }
+    const same = activeRoot && path.resolve(activeRoot) === path.resolve(root);
+    return res.json({
+      ok: true,
+      newTab: !same,
+      root,
+      branch: parsed.branch,
+      repo: parsed.repo,
+      owner: parsed.owner,
+      cloned,
+    });
+  } catch (err) {
+    console.error('[git/checkout]', err);
+    res.status(400).json({ ok: false, error: err.message || String(err) });
+  }
+});
+
 app.get('/api/workspaces', (_req, res) => {
   res.json({ workspaces: listWorkspaceSnapshots() });
 });
@@ -525,6 +702,32 @@ app.get('/api/source', (req, res) => {
   const abs = resolveSourcePath(rel, rootHint);
   if (!abs) return res.status(404).type('text').send('');
   res.type('text/plain').send(fs.readFileSync(abs, 'utf8'));
+});
+
+app.get('/api/source/diff', (req, res) => {
+  try {
+    const rel = String(req.query.path || '');
+    const rootHint = req.query.root ? String(req.query.root) : null;
+    const hit = resolveSourceHit(rel, rootHint);
+    if (!hit?.pkgRoot || !hit.repoRel) {
+      return res.status(404).json({ ok: false, error: 'File not found', lines: [] });
+    }
+    const base = resolveBaseBranch(hit.pkgRoot);
+    const diff = fileDiff(hit.pkgRoot, hit.repoRel, { base });
+    if (!diff) {
+      return res.json({ ok: true, path: rel, base, status: null, lines: [] });
+    }
+    res.json({
+      ok: true,
+      path: rel,
+      base: diff.base,
+      status: diff.status,
+      lines: diff.lines,
+    });
+  } catch (err) {
+    console.error('[source/diff]', err);
+    res.status(500).json({ ok: false, error: err.message || String(err), lines: [] });
+  }
 });
 
 app.post('/api/analyze', async (req, res) => {
@@ -605,8 +808,32 @@ app.post('/api/analyze/stream', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Code Explorer API on http://localhost:${PORT}`);
-  if (state.repo) console.log(`Loaded data for ${state.repo}`);
+if (SERVE_UI) {
+  const dist = path.join(ROOT, 'client', 'dist');
+  if (fs.existsSync(path.join(dist, 'index.html'))) {
+    app.use(express.static(dist));
+    app.use((req, res, next) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+      if (req.path.startsWith('/api')) return next();
+      res.sendFile(path.join(dist, 'index.html'), (err) => next(err));
+    });
+  } else {
+    console.warn(`UI bundle missing at ${dist} — run the CLI so it can build, or npm run build`);
+  }
+}
+
+const server = app.listen(PORT, () => {
+  if (SERVE_UI) console.log(`Code Explorer UI on http://localhost:${PORT}`);
+  else console.log(`Code Explorer API on http://localhost:${PORT}`);
+  if (BOOTSTRAP_REPO) console.log(`Opening ${BOOTSTRAP_REPO}`);
+  else if (state.repo) console.log(`Loaded data for ${state.repo}`);
   else console.log('No analyzed repo yet — open the UI and point it at one.');
+});
+server.on('error', (err) => {
+  if (err?.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use — stop the other Code Explorer API (lsof -i :${PORT}) and retry.`);
+  } else {
+    console.error(err);
+  }
+  process.exit(1);
 });

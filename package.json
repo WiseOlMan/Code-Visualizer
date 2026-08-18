@@ -4,22 +4,37 @@
   "private": true,
   "type": "module",
   "description": "Interactive force-graph code explorer for any JavaScript/TypeScript repository",
+  "bin": {
+    "code-explorer": "./cli.mjs"
+  },
+  "files": [
+    "cli.mjs",
+    "server",
+    "tools",
+    "client/index.html",
+    "client/src",
+    "vite.config.js",
+    "skills",
+    ".cursor-plugin",
+    "README.md"
+  ],
   "scripts": {
     "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "node server/index.mjs",
     "dev:client": "vite",
     "analyze": "node tools/extract-graph.mjs",
     "start": "node server/index.mjs",
+    "serve": "node cli.mjs serve",
     "build": "vite build"
   },
   "dependencies": {
+    "@vitejs/plugin-react": "^4.5.2",
     "express": "^5.1.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "vite": "^6.3.5"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.5.2",
-    "concurrently": "^9.1.2",
-    "vite": "^6.3.5"
+    "concurrently": "^9.1.2"
   }
 }

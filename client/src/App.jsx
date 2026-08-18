@@ -107,6 +107,18 @@ async function fetchGitChanges(root) {
   }
 }
 
+function gitInfoSig(info) {
+  if (!info) return '';
+  return JSON.stringify({
+    stale: !!info.stale,
+    staleReason: info.staleReason || null,
+    sourcesNewer: info.sourcesNewer || [],
+    missing: info.missingFromGraph || [],
+    files: (info.files || []).map((f) => [f.graphId, f.status, !!f.uncommitted]),
+    heads: (info.stalePackages || []).map((p) => p.currentHead || ''),
+  });
+}
+
 export default function App() {
   const [tabs, setTabs] = useState([]);
   const [activeId, setActiveId] = useState(null);
@@ -123,11 +135,16 @@ export default function App() {
   const [searchScope, setSearchScope] = useState('repo'); // repo | all
   const [searchOpen, setSearchOpen] = useState(false);
   const [focusRequest, setFocusRequest] = useState(null);
+  const [branchBusy, setBranchBusy] = useState(false);
+  const [branchError, setBranchError] = useState('');
+  const [initialOnlyGit, setInitialOnlyGit] = useState(false);
 
   const tabsRef = useRef([]);
   const analyzingTabIdRef = useRef(null);
   const searchWrapRef = useRef(null);
   const sessionReadyRef = useRef(false);
+  const autoAnalyzedRef = useRef('');
+  const analyzeRef = useRef(null);
 
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
 
@@ -172,6 +189,37 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
+        const boot = await fetch('/api/bootstrap').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+        if (boot?.changedOnly) setInitialOnlyGit(true);
+
+        if (boot?.repo) {
+          const title = String(boot.repo).split(/[/\\]/).filter(Boolean).pop() || 'Repo';
+          const tab = await loadTabFromRoot({ root: boot.repo, title });
+          sessionReadyRef.current = true;
+          setBooted(true);
+          if (cancelled) return;
+          if (tab) {
+            setTabs([tab]);
+            setActiveId(tab.id);
+            return;
+          }
+          const id = newTabId();
+          setTabs([{
+            id,
+            title,
+            root: boot.repo,
+            liveGraph: null,
+            reloadToken: 0,
+            busy: true,
+            status: 'Analyzing…',
+            progress: null,
+            error: '',
+          }]);
+          setActiveId(id);
+          setTimeout(() => analyzeRef.current?.(boot.repo), 0);
+          return;
+        }
+
         const local = readSession();
         const remote = await fetch('/api/session').then((r) => (r.ok ? r.json() : null)).catch(() => null);
         const stubs = (local?.tabs?.length ? local.tabs : null)
@@ -266,18 +314,22 @@ export default function App() {
   const refreshGit = useCallback(async (tabId, root) => {
     if (!tabId || !root) return;
     const gitInfo = await fetchGitChanges(root);
-    if (gitInfo) patchTab(tabId, { gitInfo });
+    if (!gitInfo) return;
+    const tab = tabsRef.current.find((t) => t.id === tabId);
+    // Avoid re-rendering / re-laying-out the graph when nothing git-related changed.
+    if (tab && gitInfoSig(tab.gitInfo) === gitInfoSig(gitInfo)) return;
+    patchTab(tabId, { gitInfo });
   }, []);
 
   useEffect(() => {
     if (!activeTab?.root || activeTab.busy) return;
     refreshGit(activeTab.id, activeTab.root);
-    // Poll often enough that WIP edits surface without a manual refresh.
-    const t = setInterval(() => refreshGit(activeTab.id, activeTab.root), 5_000);
+    const t = setInterval(() => refreshGit(activeTab.id, activeTab.root), 15_000);
     return () => clearInterval(t);
   }, [activeTab?.id, activeTab?.root, activeTab?.busy, activeTab?.reloadToken, refreshGit]);
 
-  // When the graph is behind HEAD or dirty sources, re-analyze automatically.
+  // Re-analyze when HEAD moved or graph-missing files appear. Source edits use a
+  // fingerprint so we don't loop on mtime noise after every analyze.
   const autoStaleKey = activeTab?.gitInfo?.stale
     ? [
       activeTab.root,
@@ -290,14 +342,18 @@ export default function App() {
   useEffect(() => {
     if (!autoStaleKey || !activeTab?.root || activeTab.busy || globalBusy) return;
     const root = activeTab.root;
+    const reason = activeTab.gitInfo?.staleReason;
+    // Debounce; skip if we just analyzed this fingerprint.
+    if (autoAnalyzedRef.current === autoStaleKey) return;
+    const delay = reason === 'sources' ? 2500 : 1200;
     const t = setTimeout(() => {
-      // Still the active tab and still stale for this fingerprint.
       const tab = tabsRef.current.find((x) => x.root === root);
       if (!tab || tab.busy || !tab.gitInfo?.stale) return;
+      autoAnalyzedRef.current = autoStaleKey;
       analyze(root);
-    }, 1200);
+    }, delay);
     return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- analyze is stable enough via tabsRef
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStaleKey, activeTab?.root, activeTab?.busy, globalBusy]);
 
   async function analyze(value) {
@@ -393,6 +449,31 @@ export default function App() {
           patchTab(id, { progress: null });
         }, 1200);
       }
+    }
+  }
+  analyzeRef.current = analyze;
+
+  async function switchBranch(paste) {
+    const value = String(paste || '').trim();
+    if (!value || branchBusy || globalBusy) return false;
+    setBranchBusy(true);
+    setBranchError('');
+    try {
+      const res = await fetch('/api/git/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: value, root: activeTab?.root || null }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || `Checkout failed (${res.status})`);
+      // Same root refreshes the active tab; another repo opens/reuses a tab via analyze.
+      await analyze(data.root);
+      return true;
+    } catch (err) {
+      setBranchError(err.message || String(err));
+      return false;
+    } finally {
+      setBranchBusy(false);
     }
   }
 
@@ -665,9 +746,13 @@ export default function App() {
                 liveGraph={tab.liveGraph}
                 reloadToken={tab.reloadToken}
                 gitInfo={tab.gitInfo || null}
+                initialOnlyGit={initialOnlyGit}
                 sidebarOpen={sidebarOpen}
                 onToggleSidebar={() => setSidebarOpen((v) => !v)}
                 onReanalyze={tab.root ? () => analyze(tab.root) : undefined}
+                onSwitchBranch={on ? switchBranch : undefined}
+                branchBusy={branchBusy}
+                branchError={on ? branchError : ''}
                 query={on ? explorerQuery : ''}
                 onQueryChange={(q) => {
                   setSearchScope('repo');
