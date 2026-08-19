@@ -32,6 +32,13 @@ function hopKindOf(l) {
   if (l.kind === 'hop') return l.hop || 'call';
   return null;
 }
+/** Edges that belong to the branch diff: hops from a changed file, or
+ *  import/call wires between two changed files. */
+function linkIsGitChange(l) {
+  if (!l?.s || !l?.t) return false;
+  if (hopKindOf(l)) return !!l.s.gitChanged;
+  return !!(l.s.gitChanged && l.t.gitChanged);
+}
 function hopColor(l) {
   return HOP_COLOR[hopKindOf(l)] || INK.edge;
 }
@@ -606,6 +613,31 @@ export class CodeGraphEngine extends React.Component {
     return out;
   }
 
+  hopLinkByKey(key) {
+    if (!key) return null;
+    return (this.links || []).find((l) => hopKeyOf(l) === key) || null;
+  }
+
+  /** Active edges plus, when a changed file is focused, its filtered-out wires. */
+  graphDrawLinks(focus) {
+    const linkList = [];
+    const seenLink = new Set();
+    for (const l of (this.activeLinks || this.links || [])) {
+      seenLink.add(l);
+      linkList.push(l);
+    }
+    if (focus?.gitChanged) {
+      for (const l of this.links || []) {
+        if (seenLink.has(l)) continue;
+        if (l.kind === 'call' && !this.state.showCalls) continue;
+        if (l.kind === 'hop' && this.state.showHops === false) continue;
+        if (l.s !== focus && l.t !== focus) continue;
+        linkList.push(l);
+      }
+    }
+    return linkList;
+  }
+
   fitNodes(ns, { pad = 56, maxK = 2.6, minSpan = 80 } = {}) {
     if (!ns?.length || !this.w || !this.h) return;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -969,7 +1001,7 @@ export class CodeGraphEngine extends React.Component {
         }
       }
       if (!off && onlyGit) {
-        if (hopKindOf(l)) off = !l.s.gitChanged && !l.t.gitChanged;
+        if (hopKindOf(l)) off = !l.s.gitChanged;
         else if (!l.s.gitChanged || !l.t.gitChanged) off = true;
       }
       l.off = off;
@@ -1047,9 +1079,12 @@ export class CodeGraphEngine extends React.Component {
     let best = null, bd = slop;
     // Match node picking: with a selection, only incident hops are interactive.
     const sel = this.state.selId ? this.byId[this.state.selId] : null;
-    for (const l of this.activeLinks || this.links || []) {
-      if (l.off || !hopKindOf(l) || !l.s || !l.t) continue;
+    const focus = this.hover || sel;
+    const branchEdges = this.state.onlyGit;
+    for (const l of this.graphDrawLinks(focus)) {
+      if (!hopKindOf(l) || !l.s || !l.t) continue;
       if (sel && !sel.off && l.s !== sel && l.t !== sel) continue;
+      if (branchEdges && !linkIsGitChange(l) && l.s !== focus && l.t !== focus) continue;
       const c = linkCurve(l);
       const d = distToCurve(p, c.start, { x: c.cx, y: c.cy }, c.end);
       if (d < bd) { bd = d; best = l; }
@@ -1445,7 +1480,8 @@ export class CodeGraphEngine extends React.Component {
     // Hover or selection dims to the neighborhood; Tab cycles which title is shown.
     const focus = this.hover || sel;
     // Hovering/selecting a changed file reveals its real connections (even when
-    // "changed only" has filtered them out) and labels them.
+    // "changed only" has filtered them out) and labels them. Branch-highlights
+    // keep those extra wires faint so the diff edges stay readable.
     const revealGit = !!(focus && focus.gitChanged);
     const revealed = new Set();
     if (revealGit) {
@@ -1459,21 +1495,11 @@ export class CodeGraphEngine extends React.Component {
     }
     const labeled = this.labeledNode();
 
-    const linkList = [];
-    const seenLink = new Set();
-    for (const l of (this.activeLinks || this.links)) {
-      seenLink.add(l);
-      linkList.push(l);
-    }
-    if (revealGit) {
-      for (const l of this.links) {
-        if (seenLink.has(l)) continue;
-        if (l.kind === 'call' && !this.state.showCalls) continue;
-        if (l.kind === 'hop' && this.state.showHops === false) continue;
-        if (l.s !== focus && l.t !== focus) continue;
-        if (!revealed.has(l.s.id) || !revealed.has(l.t.id)) continue;
-        linkList.push(l);
-      }
+    const branchEdges = this.state.onlyGit;
+    const linkList = this.graphDrawLinks(focus);
+    if (branchEdges) {
+      // Context wires under the diff so changed hops/imports stay readable.
+      linkList.sort((a, b) => Number(linkIsGitChange(a)) - Number(linkIsGitChange(b)));
     }
 
     const hopOn = this.state.showHops !== false;
@@ -1485,6 +1511,10 @@ export class CodeGraphEngine extends React.Component {
       const selectedHop = typed && hopKeyOf(l) === selHopKey;
       const hoverHop = typed && l === this.hoverHop;
       const nodeOn = !!(focus && (l.s === focus || l.t === focus));
+      const gitChange = linkIsGitChange(l);
+      // Branch-highlights: hide non-diff edges unless they touch the focused node.
+      const contextEdge = branchEdges && !gitChange;
+      if (contextEdge && !nodeOn && !selectedHop && !hoverHop) continue;
       const dim = q && !(l.s.id.toLowerCase().includes(q) || l.t.id.toLowerCase().includes(q));
       const c = linkCurve(l);
       if (typed && hopOn) {
@@ -1493,6 +1523,9 @@ export class CodeGraphEngine extends React.Component {
         if (selectedHop || hoverHop) {
           ctx.globalAlpha = 1;
           ctx.lineWidth = (selectedHop ? 3.1 : 2.4) / k;
+        } else if (contextEdge) {
+          ctx.globalAlpha = 0.1;
+          ctx.lineWidth = 0.65 / k;
         } else if (nodeOn) {
           ctx.globalAlpha = 0.92;
           ctx.lineWidth = 2.05 / k;
@@ -1507,10 +1540,16 @@ export class CodeGraphEngine extends React.Component {
         ctx.setLineDash(typed === 'http' ? [5 / k * k, 4] : []);
       } else {
         const on = focus ? nodeOn : true;
-        ctx.globalAlpha = on ? (focus ? 0.9 : isCall ? 0.34 : hopOn ? 0.12 : 0.26) : 0.05;
+        if (contextEdge) {
+          ctx.globalAlpha = 0.08;
+        } else {
+          ctx.globalAlpha = on ? (focus ? 0.9 : isCall ? 0.34 : hopOn ? 0.12 : 0.26) : 0.05;
+        }
         if (dim && !on) ctx.globalAlpha *= 0.3;
-        ctx.strokeStyle = isCall ? INK.call : (on && focus ? l.t.color : INK.edge);
-        ctx.lineWidth = isCall ? Math.min(2.6, 0.7 + l.weight * 0.3) : Math.min(3.2, 0.55 + l.weight * 0.28);
+        ctx.strokeStyle = isCall ? INK.call : (on && focus && !contextEdge ? l.t.color : INK.edge);
+        ctx.lineWidth = contextEdge
+          ? (isCall ? 0.55 : 0.45)
+          : isCall ? Math.min(2.6, 0.7 + l.weight * 0.3) : Math.min(3.2, 0.55 + l.weight * 0.28);
         ctx.setLineDash(isCall ? [5 / k * k, 4] : []);
       }
 
@@ -1520,11 +1559,11 @@ export class CodeGraphEngine extends React.Component {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      if (typed && hopOn && (selectedHop || hoverHop || nodeOn)) {
+      if (typed && hopOn && (selectedHop || hoverHop || (nodeOn && !contextEdge))) {
         hopLabelLinks.push({ l, c, selectedHop });
       }
 
-      if (nodeOn && focus && !typed) {
+      if (nodeOn && focus && !typed && !contextEdge) {
         const ang = Math.atan2(c.end.y - c.cy, c.end.x - c.cx);
         ctx.fillStyle = ctx.strokeStyle;
         if (isCall) {
@@ -1715,8 +1754,8 @@ export class CodeGraphEngine extends React.Component {
   positionHopCard() {
     const el = this.hopCardRef?.current;
     if (!el) return;
-    const hopLink = (this.activeLinks || this.links || []).find((l) => hopKeyOf(l) === this.state.selHopKey);
-    if (!hopLink || hopLink.off || !hopLink.s || !hopLink.t) return;
+    const hopLink = this.hopLinkByKey(this.state.selHopKey);
+    if (!hopLink || !hopLink.s || !hopLink.t) return;
     const c = linkCurve(hopLink);
     const mid = bezierAt(c.start, { x: c.cx, y: c.cy }, c.end, 0.5);
     const sc = this.worldToScreen(mid.x, mid.y);
@@ -1800,8 +1839,8 @@ export class CodeGraphEngine extends React.Component {
       this.props.onQueryChange?.(query);
     };
     let hopCard = null;
-    const hopLink = (this.activeLinks || this.links || []).find((l) => hopKeyOf(l) === this.state.selHopKey);
-    if (hopLink && !hopLink.off && hopLink.s && hopLink.t) {
+    const hopLink = this.hopLinkByKey(this.state.selHopKey);
+    if (hopLink && hopLink.s && hopLink.t) {
       const c = linkCurve(hopLink);
       const mid = bezierAt(c.start, { x: c.cx, y: c.cy }, c.end, 0.5);
       const sc = this.worldToScreen(mid.x, mid.y);
