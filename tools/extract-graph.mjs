@@ -51,6 +51,14 @@ const BACKEND_FETCH_RE = /(?:\b|\.)backendFetch\s*\(\s*[`'"]([A-Za-z_][\w]*)[`'"
 const API_METHOD_RE = /\b(?:api|apiClient|backendApi|client)\.([A-Za-z_][\w]*)\s*\(/g;
 const CALL_API_RE = /\.callApi\s*\(\s*[`'"]([^`'"]+)[`'"]\s*,\s*[`'"]([A-Z]+)[`'"]/g;
 const CONTROL_FLOW = new Set(['constructor', 'if', 'for', 'while', 'switch', 'catch', 'function', 'else']);
+const METHOD_NOISE = new Set([
+  'then', 'catch', 'finally', 'map', 'filter', 'forEach', 'reduce', 'find', 'some', 'every',
+  'push', 'pop', 'shift', 'unshift', 'includes', 'indexOf', 'lastIndexOf', 'slice', 'splice',
+  'join', 'split', 'replace', 'trim', 'toLowerCase', 'toUpperCase', 'startsWith', 'endsWith',
+  'toString', 'valueOf', 'bind', 'apply', 'call',
+  'log', 'warn', 'error', 'json', 'send', 'status', 'next', 'emit', 'on', 'once',
+  'keys', 'values', 'entries', 'has',
+]);
 const APP_MOUNT_RE = /\bapp\.use\s*\(\s*[`'"](\/[^`'"]*)[`'"]/g;
 const ROUTER_VERB_RE = /\b(?:router|app|server)\.(get|post|put|patch|delete|all)\s*\(\s*[`'"]([^`'"]+)[`'"]/gi;
 
@@ -459,6 +467,295 @@ function findEndpointForUrl(url, endpointByUrl, endpoints) {
   return null;
 }
 
+function matchBalanced(src, from, open, close) {
+  const start = src.indexOf(open, from);
+  if (start < 0) return null;
+  let depth = 0;
+  for (let i = start; i < src.length; i++) {
+    const c = src[i];
+    if (c === open) depth++;
+    else if (c === close) { depth--; if (!depth) return src.slice(start, i + 1); }
+  }
+  return null;
+}
+
+function ensureNode(nodesById, id, extras = {}) {
+  if (!id || nodesById.has(id)) return;
+  nodesById.set(id, {
+    id,
+    name: id.split('/').pop(),
+    folder: id.includes('/') ? id.slice(0, id.lastIndexOf('/')) : '',
+    isTest: false,
+    inDeg: 0,
+    outDeg: 0,
+    synthetic: true,
+    ...extras,
+  });
+}
+
+function addHop(hopMap, hop) {
+  if (!hop?.source || !hop?.target || hop.source === hop.target) return;
+  const key = `${hop.hop}|${hop.source}=>${hop.target}|${hop.label}`;
+  const existing = hopMap.get(key);
+  if (existing) {
+    existing.weight = (existing.weight || 1) + (hop.weight || 1);
+    if (hop.fields?.length && !existing.fields?.length) existing.fields = hop.fields;
+    return;
+  }
+  hopMap.set(key, { weight: 1, fields: [], ...hop });
+}
+
+const PRISMA_WRITE = new Set([
+  'create', 'createMany', 'update', 'updateMany', 'upsert', 'delete', 'deleteMany',
+]);
+const PRISMA_CALL_RE =
+  /(?:^|[^\w.])(?:prisma|db|database|client|tx|this\.(?:prisma|db))\s*\.\s*([A-Za-z_]\w*)\s*\.\s*(findMany|findUnique|findFirst|findFirstOrThrow|findUniqueOrThrow|create|createMany|update|updateMany|upsert|delete|deleteMany|count|aggregate)\s*\(/g;
+const JOB_STR_RE =
+  /(?:jobs|jobQueue|queue|queues|agenda|pgBoss|pgboss|bullmq|bull|workerClient|workers)\s*\.\s*(?:enqueue|add|now|schedule|publish|push)\s*\(\s*[`'"]([^`'"]+)[`'"]/gi;
+const JOB_IDENT_RE =
+  /(?:jobs|jobQueue|queue)\s*\.\s*(?:enqueue|add)\s*\(\s*([A-Za-z_]\w*(?:Job)?)/g;
+const DRIZZLE_WRITE_RE =
+  /(?:^|[^\w.])(?:db|database|tx|this\.(?:db|database))\s*\.\s*(update|insert|delete)\s*\(\s*([A-Za-z_]\w*)/g;
+const DRIZZLE_SELECT_RE =
+  /(?:^|[^\w.])(?:db|database|tx|this\.(?:db|database))\s*\.\s*select\s*\(/g;
+const DRIZZLE_QUERY_RE =
+  /(?:^|[^\w.])(?:db|database|tx)\s*\.\s*query\s*\.\s*([A-Za-z_]\w*)\s*\.\s*(findMany|findFirst|findFirstOrThrow)\s*\(/g;
+const METHOD_CALL_RE = /\b([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\s*\(/g;
+
+const SKIP_OBJECT_KEYS = new Set([
+  'select', 'include', 'where', 'data', 'orderBy', 'skip', 'take', 'cursor', 'distinct',
+]);
+
+function extractObjectFields(src, fromIndex, key = 'data') {
+  const slice = src.slice(fromIndex, fromIndex + 1200);
+  const re = new RegExp(`\\b${key}\\s*:`);
+  const m = re.exec(slice);
+  if (!m) return [];
+  const body = matchBalanced(slice, m.index, '{', '}');
+  if (!body) return [];
+  const fields = [];
+  const inner = body.slice(1, -1);
+  for (const fm of inner.matchAll(/([A-Za-z_$][\w$]*)\s*:/g)) {
+    if (SKIP_OBJECT_KEYS.has(fm[1])) continue;
+    const after = inner.slice(fm.index + fm[0].length).trim();
+    const to = after.split(/[,\n]/)[0].replace(/\s+/g, ' ').trim().slice(0, 72);
+    if (!to || to.startsWith('{') || to.startsWith('[') || to.startsWith('...')) continue;
+    fields.push({ name: fm[1], to });
+    if (fields.length >= 10) break;
+  }
+  return fields;
+}
+
+function extractCallObjectFields(src, fromIndex, fnName) {
+  const slice = src.slice(fromIndex, fromIndex + 1400);
+  const re = new RegExp(`\\.${fnName}\\s*\\(`);
+  const m = re.exec(slice);
+  if (!m) return [];
+  const body = matchBalanced(slice, m.index + m[0].length - 1, '{', '}');
+  if (!body) return [];
+  const fields = [];
+  const inner = body.slice(1, -1);
+  for (const fm of inner.matchAll(/([A-Za-z_$][\w$]*)\s*:/g)) {
+    if (SKIP_OBJECT_KEYS.has(fm[1])) continue;
+    const after = inner.slice(fm.index + fm[0].length).trim();
+    const to = after.split(/[,\n]/)[0].replace(/\s+/g, ' ').trim().slice(0, 72);
+    if (!to || to.startsWith('{') || to.startsWith('[') || to.startsWith('...')) continue;
+    fields.push({ name: fm[1], to });
+    if (fields.length >= 10) break;
+  }
+  return fields;
+}
+
+function extractProtectedFields(src, usedNames) {
+  const m = src.match(/\b(?:protectedFields|PROTECTED_FIELDS|omitFields)\b[^=\n]{0,80}=\s*\[([^\]]{0,500})\]/);
+  if (!m) return [];
+  const used = new Set(usedNames || []);
+  return [...m[1].matchAll(/['"]([A-Za-z_]\w*)['"]/g)]
+    .map((x) => x[1])
+    .filter((name) => !used.has(name))
+    .slice(0, 12);
+}
+
+function findWorkerFile(jobName, fileIndex) {
+  const needle = String(jobName || '')
+    .replace(/Job$/i, '')
+    .replace(/[-_]/g, '')
+    .toLowerCase();
+  if (!needle) return null;
+  let best = null;
+  for (const rel of fileIndex.keys()) {
+    if (/\.(test|spec)\./.test(rel)) continue;
+    const base = path.posix.basename(rel).replace(/\.[^.]+$/, '').replace(/[-_.]/g, '').toLowerCase();
+    if (!base.includes(needle) && !needle.includes(base)) continue;
+    const score = /worker|job|queue|tasks?/.test(rel.toLowerCase()) ? 2 : 1;
+    if (!best || score > best.score) best = { rel, score };
+  }
+  return best?.rel || null;
+}
+
+function extractHops({ files, contents, fileIndex, nodesById, linkMap }) {
+  const hopMap = new Map();
+  const importedByFile = new Map();
+  for (const link of linkMap.values()) {
+    const list = importedByFile.get(link.source) || [];
+    list.push(link);
+    importedByFile.set(link.source, list);
+  }
+
+  for (const f of files) {
+    const src = contents.get(f.rel);
+    if (!src) continue;
+    if (isEndpointNoise(f.rel)) continue;
+    if (isGenerated(f.rel) || isGeneratedApiClientFile(f.rel, src)) continue;
+    const code = stripComments(src);
+
+    PRISMA_CALL_RE.lastIndex = 0;
+    let m;
+    while ((m = PRISMA_CALL_RE.exec(code))) {
+      const model = m[1];
+      const op = m[2];
+      const hop = PRISMA_WRITE.has(op) ? 'prisma-write' : 'prisma-read';
+      const target = `prisma/${model}`;
+      ensureNode(nodesById, target, { kind: 'prisma-model' });
+      const t = nodesById.get(target);
+      if (t) t.inDeg += 1;
+      const fields = hop === 'prisma-write'
+        ? extractObjectFields(code, m.index, 'data')
+        : extractObjectFields(code, m.index, 'where');
+      addHop(hopMap, {
+        source: f.rel,
+        target,
+        hop,
+        label: `${model}.${op}`,
+        fields,
+        protected: hop === 'prisma-write' ? extractProtectedFields(src, fields.map((f) => f.name)) : [],
+      });
+    }
+
+    DRIZZLE_WRITE_RE.lastIndex = 0;
+    while ((m = DRIZZLE_WRITE_RE.exec(code))) {
+      const op = m[1];
+      const model = m[2];
+      const target = `db/${model}`;
+      ensureNode(nodesById, target, { kind: 'prisma-model' });
+      const t = nodesById.get(target);
+      if (t) t.inDeg += 1;
+      const fields = op === 'insert'
+        ? extractCallObjectFields(code, m.index, 'values')
+        : op === 'update'
+          ? extractCallObjectFields(code, m.index, 'set')
+          : [];
+      addHop(hopMap, {
+        source: f.rel,
+        target,
+        hop: 'drizzle-write',
+        label: `${model}.${op}`,
+        fields,
+      });
+    }
+    DRIZZLE_SELECT_RE.lastIndex = 0;
+    while ((m = DRIZZLE_SELECT_RE.exec(code))) {
+      const from = /\.from\s*\(\s*([A-Za-z_]\w*)/.exec(code.slice(m.index, m.index + 400));
+      const model = from?.[1];
+      if (!model) continue;
+      const target = `db/${model}`;
+      ensureNode(nodesById, target, { kind: 'prisma-model' });
+      const t = nodesById.get(target);
+      if (t) t.inDeg += 1;
+      addHop(hopMap, {
+        source: f.rel,
+        target,
+        hop: 'drizzle-read',
+        label: `${model}.select`,
+      });
+    }
+    DRIZZLE_QUERY_RE.lastIndex = 0;
+    while ((m = DRIZZLE_QUERY_RE.exec(code))) {
+      const model = m[1];
+      const op = m[2];
+      const target = `db/${model}`;
+      ensureNode(nodesById, target, { kind: 'prisma-model' });
+      const t = nodesById.get(target);
+      if (t) t.inDeg += 1;
+      addHop(hopMap, {
+        source: f.rel,
+        target,
+        hop: 'drizzle-read',
+        label: `${model}.${op}`,
+      });
+    }
+
+    JOB_STR_RE.lastIndex = 0;
+    while ((m = JOB_STR_RE.exec(code))) {
+      const jobName = m[1].replace(/\s+/g, '');
+      const target = findWorkerFile(jobName, fileIndex) || `jobs/${jobName}`;
+      ensureNode(nodesById, target, { kind: 'job' });
+      const t = nodesById.get(target);
+      if (t) t.inDeg += 1;
+      addHop(hopMap, {
+        source: f.rel,
+        target,
+        hop: 'job',
+        label: `enqueue ${jobName}`,
+        fields: extractObjectFields(code, m.index, 'data'),
+      });
+    }
+    JOB_IDENT_RE.lastIndex = 0;
+    while ((m = JOB_IDENT_RE.exec(code))) {
+      const jobName = m[1];
+      const target = findWorkerFile(jobName, fileIndex) || `jobs/${jobName}`;
+      ensureNode(nodesById, target, { kind: 'job' });
+      const t = nodesById.get(target);
+      if (t) t.inDeg += 1;
+      addHop(hopMap, {
+        source: f.rel,
+        target,
+        hop: 'job',
+        label: `enqueue ${jobName}`,
+      });
+    }
+
+    const imports = importedByFile.get(f.rel) || [];
+    if (!imports.length) continue;
+    const methodsByBinding = new Map();
+    METHOD_CALL_RE.lastIndex = 0;
+    while ((m = METHOD_CALL_RE.exec(code))) {
+      const binding = m[1];
+      const method = m[2];
+      if (CONTROL_FLOW.has(binding) || CONTROL_FLOW.has(method) || METHOD_NOISE.has(method)) continue;
+      if (binding === 'prisma' || binding === 'db' || binding === 'console' || binding === 'Math') continue;
+      const set = methodsByBinding.get(binding) || new Set();
+      set.add(method);
+      methodsByBinding.set(binding, set);
+    }
+    for (const link of imports) {
+      for (const sym of link.symbols || []) {
+        if (/^[A-Z0-9_]+$/.test(sym)) continue;
+        const methods = methodsByBinding.get(sym);
+        if (!methods?.size) continue;
+        for (const method of methods) {
+          addHop(hopMap, {
+            source: f.rel,
+            target: link.target,
+            hop: 'call',
+            label: `${sym}.${method}`,
+          });
+        }
+      }
+    }
+  }
+
+  return [...hopMap.values()];
+}
+
+function isGenerated(id) {
+  return (
+    /(^|\/)(\.next|dist|build|coverage|out|storybook-static|__generated__|generated|\.openapi-generator)(\/|$)/.test(id) ||
+    /(^|\/)(backend_client|__mocks__|http-mocks)(\/|$)/.test(id) ||
+    /\.(generated|gen)\.[jt]sx?$/.test(id)
+  );
+}
+
 function addCallEdge(callMap, { source, target, urls, weight = 1, role = 'direct', via = null }) {
   if (!source || !target || source === target) return;
   const urlKey = (urls || []).slice().sort().join(',');
@@ -563,7 +860,7 @@ export function* extractGraphStream(repoPathOrWorkspace, { outDir, batchSize = 3
       writeOutputs(
         outDir,
         { repo: repoName, nodes: [], links: [] },
-        { endpoints: [], calls: [] },
+        { endpoints: [], calls: [], hops: [] },
         workspace,
       );
     }
@@ -599,7 +896,7 @@ export function* extractGraphStream(repoPathOrWorkspace, { outDir, batchSize = 3
     missing: workspace.missing,
     total: files.length,
     graph: { repo: repoName, nodes: [...nodesById.values()], links: [] },
-    endpoints: { endpoints: [], calls: [] },
+    endpoints: { endpoints: [], calls: [], hops: [] },
   };
 
   const fileIndex = new Map(files.map((f) => [f.rel, f]));
@@ -796,6 +1093,8 @@ export function* extractGraphStream(repoPathOrWorkspace, { outDir, batchSize = 3
     }
   }
 
+  const hops = extractHops({ files, contents, fileIndex, nodesById, linkMap });
+
   const graph = {
     repo: repoName,
     nodes: [...nodesById.values()],
@@ -805,6 +1104,7 @@ export function* extractGraphStream(repoPathOrWorkspace, { outDir, batchSize = 3
   const endpointData = {
     endpoints,
     calls: allCalls,
+    hops,
   };
 
   if (outDir) writeOutputs(outDir, graph, endpointData, workspace);
@@ -823,6 +1123,7 @@ export function* extractGraphStream(repoPathOrWorkspace, { outDir, batchSize = 3
       links: graph.links.length,
       endpoints: endpoints.length,
       calls: logicalCalls,
+      hops: hops.length,
       sdkMethods: sdkMethods.size,
     },
   };
@@ -887,7 +1188,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     }
     const result = extractGraph(workspace, { outDir });
     console.log(
-      `Wrote ${outDir}\n  ${result.stats.nodes} files · ${result.stats.links} imports · ${result.stats.endpoints} endpoints · ${result.stats.calls} calls`,
+      `Wrote ${outDir}\n  ${result.stats.nodes} files · ${result.stats.links} imports · ${result.stats.endpoints} endpoints · ${result.stats.calls} calls · ${result.stats.hops} hops`,
     );
   } catch (err) {
     console.error(err.message || err);

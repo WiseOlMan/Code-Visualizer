@@ -445,7 +445,7 @@ function loadMeta() {
       // Seed a workspace snapshot from the last analysis if none exists yet.
       if (!fs.existsSync(path.join(workspaceDir(state.root), 'graph.json'))) {
         const graph = readJson('graph.json');
-        const endpoints = readJson('endpoints.json') || { endpoints: [], calls: [] };
+        const endpoints = readJson('endpoints.json') || { endpoints: [], calls: [], hops: [] };
         if (graph) {
           persistWorkspaceSnapshot({
             root: state.root,

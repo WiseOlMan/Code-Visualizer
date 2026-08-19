@@ -1,429 +1,79 @@
 {
   "endpoints": [
     {
-      "id": "app/api/admin/events/[id]/image/route.ts",
-      "url": "/api/admin/events/:id/image",
+      "id": "app/(auth)/api/auth/[...nextauth]/route.ts",
+      "url": "//api/auth/:nextauth",
       "urls": [
-        "/api/admin/events/:id/image"
+        "//api/auth/:nextauth"
       ],
-      "methods": [
-        "PATCH"
-      ]
+      "methods": []
     },
     {
-      "id": "app/api/admin/events/[id]/route.ts",
-      "url": "/api/admin/events/:id",
+      "id": "app/(chat)/api/chat/knowledge-hints.ts",
+      "url": "/api/chat/knowledge-hints",
       "urls": [
-        "/api/admin/events/:id"
+        "/api/chat/knowledge-hints"
       ],
-      "methods": [
-        "PATCH"
-      ]
+      "methods": []
     },
     {
-      "id": "app/api/admin/events/[id]/venue/route.ts",
-      "url": "/api/admin/events/:id/venue",
+      "id": "app/(chat)/api/chat/route.ts",
+      "url": "//api/chat",
       "urls": [
-        "/api/admin/events/:id/venue"
+        "//api/chat"
       ],
       "methods": [
-        "PATCH"
-      ]
-    },
-    {
-      "id": "app/api/admin/events/route.ts",
-      "url": "/api/admin/events",
-      "urls": [
-        "/api/admin/events"
-      ],
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "id": "app/api/admin/sources/[id]/approve/route.ts",
-      "url": "/api/admin/sources/:id/approve",
-      "urls": [
-        "/api/admin/sources/:id/approve"
-      ],
-      "methods": [
-        "GET",
-        "POST"
-      ]
-    },
-    {
-      "id": "app/api/admin/sources/[id]/details/route.ts",
-      "url": "/api/admin/sources/:id/details",
-      "urls": [
-        "/api/admin/sources/:id/details"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/admin/sources/[id]/route.ts",
-      "url": "/api/admin/sources/:id",
-      "urls": [
-        "/api/admin/sources/:id"
-      ],
-      "methods": [
-        "PUT",
-        "PATCH",
-        "DELETE"
-      ]
-    },
-    {
-      "id": "app/api/admin/sources/route.ts",
-      "url": "/api/admin/sources",
-      "urls": [
-        "/api/admin/sources"
-      ],
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "id": "app/api/admin/submissions/[id]/approve/route.ts",
-      "url": "/api/admin/submissions/:id/approve",
-      "urls": [
-        "/api/admin/submissions/:id/approve"
-      ],
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "id": "app/api/admin/submissions/[id]/reject/route.ts",
-      "url": "/api/admin/submissions/:id/reject",
-      "urls": [
-        "/api/admin/submissions/:id/reject"
-      ],
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "id": "app/api/admin/submissions/route.ts",
-      "url": "/api/admin/submissions",
-      "urls": [
-        "/api/admin/submissions"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/admin/syncs/[id]/route.ts",
-      "url": "/api/admin/syncs/:id",
-      "urls": [
-        "/api/admin/syncs/:id"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/admin/syncs/route.ts",
-      "url": "/api/admin/syncs",
-      "urls": [
-        "/api/admin/syncs"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/admin/tags/[id]/details/route.ts",
-      "url": "/api/admin/tags/:id/details",
-      "urls": [
-        "/api/admin/tags/:id/details"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/admin/tags/[id]/route.ts",
-      "url": "/api/admin/tags/:id",
-      "urls": [
-        "/api/admin/tags/:id"
-      ],
-      "methods": [
-        "PATCH"
-      ]
-    },
-    {
-      "id": "app/api/admin/tags/route.ts",
-      "url": "/api/admin/tags",
-      "urls": [
-        "/api/admin/tags"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/admin/tags/search/route.ts",
-      "url": "/api/admin/tags/search",
-      "urls": [
-        "/api/admin/tags/search"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/admin/venues/[id]/events/route.ts",
-      "url": "/api/admin/venues/:id/events",
-      "urls": [
-        "/api/admin/venues/:id/events"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/admin/venues/[id]/route.ts",
-      "url": "/api/admin/venues/:id",
-      "urls": [
-        "/api/admin/venues/:id"
-      ],
-      "methods": [
-        "GET",
-        "PATCH",
-        "DELETE"
-      ]
-    },
-    {
-      "id": "app/api/admin/venues/route.ts",
-      "url": "/api/admin/venues",
-      "urls": [
-        "/api/admin/venues"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/calendar/feed/[filename]/route.ts",
-      "url": "/api/calendar/feed/:filename",
-      "urls": [
-        "/api/calendar/feed/:filename"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/config/force-simple-submit/route.ts",
-      "url": "/api/config/force-simple-submit",
-      "urls": [
-        "/api/config/force-simple-submit"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/cron/sync-sources/route.ts",
-      "url": "/api/cron/sync-sources",
-      "urls": [
-        "/api/cron/sync-sources"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/events/[id]/route.ts",
-      "url": "/api/events/:id",
-      "urls": [
-        "/api/events/:id"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/events/[id]/type/route.ts",
-      "url": "/api/events/:id/type",
-      "urls": [
-        "/api/events/:id/type"
-      ],
-      "methods": [
-        "PUT"
-      ]
-    },
-    {
-      "id": "app/api/events/calendar/route.ts",
-      "url": "/api/events/calendar",
-      "urls": [
-        "/api/events/calendar"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/events/route.ts",
-      "url": "/api/events",
-      "urls": [
-        "/api/events"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/ideas/[id]/status/route.ts",
-      "url": "/api/ideas/:id/status",
-      "urls": [
-        "/api/ideas/:id/status"
-      ],
-      "methods": [
-        "PUT"
-      ]
-    },
-    {
-      "id": "app/api/ideas/[id]/vote/route.ts",
-      "url": "/api/ideas/:id/vote",
-      "urls": [
-        "/api/ideas/:id/vote"
-      ],
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "id": "app/api/ideas/route.ts",
-      "url": "/api/ideas",
-      "urls": [
-        "/api/ideas"
-      ],
-      "methods": [
-        "GET",
-        "POST"
-      ]
-    },
-    {
-      "id": "app/api/og-image/route.ts",
-      "url": "/api/og-image",
-      "urls": [
-        "/api/og-image"
-      ],
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "id": "app/api/saved-events/route.ts",
-      "url": "/api/saved-events",
-      "urls": [
-        "/api/saved-events"
-      ],
-      "methods": [
-        "GET",
         "POST",
         "DELETE"
       ]
     },
     {
-      "id": "app/api/series/route.ts",
-      "url": "/api/series",
+      "id": "app/(chat)/api/document/route.ts",
+      "url": "//api/document",
       "urls": [
-        "/api/series"
+        "//api/document"
       ],
       "methods": [
         "GET",
+        "POST",
+        "PATCH"
+      ]
+    },
+    {
+      "id": "app/(chat)/api/files/upload/route.ts",
+      "url": "//api/files/upload",
+      "urls": [
+        "//api/files/upload"
+      ],
+      "methods": [
         "POST"
       ]
     },
     {
-      "id": "app/api/sources/route.ts",
-      "url": "/api/sources",
+      "id": "app/(chat)/api/history/route.ts",
+      "url": "//api/history",
       "urls": [
-        "/api/sources"
+        "//api/history"
       ],
       "methods": [
         "GET"
       ]
     },
     {
-      "id": "app/api/submit-source/detect/route.ts",
-      "url": "/api/submit-source/detect",
+      "id": "app/(chat)/api/suggestions/route.ts",
+      "url": "//api/suggestions",
       "urls": [
-        "/api/submit-source/detect"
-      ],
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "id": "app/api/submit-source/fetch-raw/route.ts",
-      "url": "/api/submit-source/fetch-raw",
-      "urls": [
-        "/api/submit-source/fetch-raw"
-      ],
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "id": "app/api/submit-source/normalize-event/route.ts",
-      "url": "/api/submit-source/normalize-event",
-      "urls": [
-        "/api/submit-source/normalize-event"
-      ],
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "id": "app/api/submit-source/preview/route.ts",
-      "url": "/api/submit-source/preview",
-      "urls": [
-        "/api/submit-source/preview"
-      ],
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "id": "app/api/submit-source/route.ts",
-      "url": "/api/submit-source",
-      "urls": [
-        "/api/submit-source"
-      ],
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "id": "app/api/submit-source/simple/route.ts",
-      "url": "/api/submit-source/simple",
-      "urls": [
-        "/api/submit-source/simple"
-      ],
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "id": "app/api/user/ideas/route.ts",
-      "url": "/api/user/ideas",
-      "urls": [
-        "/api/user/ideas"
+        "//api/suggestions"
       ],
       "methods": [
         "GET"
       ]
     },
     {
-      "id": "app/api/user/preferences/route.ts",
-      "url": "/api/user/preferences",
+      "id": "app/(chat)/api/vote/route.ts",
+      "url": "//api/vote",
       "urls": [
-        "/api/user/preferences"
+        "//api/vote"
       ],
       "methods": [
         "GET",
@@ -431,23 +81,674 @@
       ]
     },
     {
-      "id": "app/api/user/sources/route.ts",
-      "url": "/api/user/sources",
+      "id": "app/api/admin/feedback/route.ts",
+      "url": "/api/admin/feedback",
       "urls": [
-        "/api/user/sources"
+        "/api/admin/feedback"
       ],
       "methods": [
         "GET"
       ]
     },
     {
-      "id": "app/api/venues/route.ts",
-      "url": "/api/venues",
+      "id": "app/api/admin/knowledge/blob/route.ts",
+      "url": "/api/admin/knowledge/blob",
       "urls": [
-        "/api/venues"
+        "/api/admin/knowledge/blob"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/admin/knowledge/crypto.ts",
+      "url": "/api/admin/knowledge/crypto",
+      "urls": [
+        "/api/admin/knowledge/crypto"
+      ],
+      "methods": []
+    },
+    {
+      "id": "app/api/admin/knowledge/documents/route.ts",
+      "url": "/api/admin/knowledge/documents",
+      "urls": [
+        "/api/admin/knowledge/documents"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/admin/knowledge/reingest/route.ts",
+      "url": "/api/admin/knowledge/reingest",
+      "urls": [
+        "/api/admin/knowledge/reingest"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/admin/knowledge/shared.ts",
+      "url": "/api/admin/knowledge/shared",
+      "urls": [
+        "/api/admin/knowledge/shared"
+      ],
+      "methods": []
+    },
+    {
+      "id": "app/api/admin/knowledge/upload/route.ts",
+      "url": "/api/admin/knowledge/upload",
+      "urls": [
+        "/api/admin/knowledge/upload"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/admin/openai-stats/route.ts",
+      "url": "/api/admin/openai-stats",
+      "urls": [
+        "/api/admin/openai-stats"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/admin/stats/route.ts",
+      "url": "/api/admin/stats",
+      "urls": [
+        "/api/admin/stats"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/admin/votes/route.ts",
+      "url": "/api/admin/votes",
+      "urls": [
+        "/api/admin/votes"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/bulk-email/route.ts",
+      "url": "/api/bulk-email",
+      "urls": [
+        "/api/bulk-email"
       ],
       "methods": [
         "GET",
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/bulk-import-charts/route.ts",
+      "url": "/api/bulk-import-charts",
+      "urls": [
+        "/api/bulk-import-charts"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/chart/[id]/archetype-synthesis/route.ts",
+      "url": "/api/chart/:id/archetype-synthesis",
+      "urls": [
+        "/api/chart/:id/archetype-synthesis"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/chart/[id]/check-access/route.ts",
+      "url": "/api/chart/:id/check-access",
+      "urls": [
+        "/api/chart/:id/check-access"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/chart/[id]/mark-as-me/route.ts",
+      "url": "/api/chart/:id/mark-as-me",
+      "urls": [
+        "/api/chart/:id/mark-as-me"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/chart/[id]/revoke/route.ts",
+      "url": "/api/chart/:id/revoke",
+      "urls": [
+        "/api/chart/:id/revoke"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/chart/[id]/route.ts",
+      "url": "/api/chart/:id",
+      "urls": [
+        "/api/chart/:id"
+      ],
+      "methods": [
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE"
+      ]
+    },
+    {
+      "id": "app/api/chart/[id]/set-default/route.ts",
+      "url": "/api/chart/:id/set-default",
+      "urls": [
+        "/api/chart/:id/set-default"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/chart/[id]/share/route.ts",
+      "url": "/api/chart/:id/share",
+      "urls": [
+        "/api/chart/:id/share"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/chart/[id]/share-birth-info/route.ts",
+      "url": "/api/chart/:id/share-birth-info",
+      "urls": [
+        "/api/chart/:id/share-birth-info"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/chart/[id]/transfer/route.ts",
+      "url": "/api/chart/:id/transfer",
+      "urls": [
+        "/api/chart/:id/transfer"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/chart/[id]/unrevoke/route.ts",
+      "url": "/api/chart/:id/unrevoke",
+      "urls": [
+        "/api/chart/:id/unrevoke"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/chart/ephemeris/route.ts",
+      "url": "/api/chart/ephemeris",
+      "urls": [
+        "/api/chart/ephemeris"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/chart/famous/route.ts",
+      "url": "/api/chart/famous",
+      "urls": [
+        "/api/chart/famous"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/chart/list/route.ts",
+      "url": "/api/chart/list",
+      "urls": [
+        "/api/chart/list"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/chart/route.ts",
+      "url": "/api/chart",
+      "urls": [
+        "/api/chart"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/create-chart/route.ts",
+      "url": "/api/create-chart",
+      "urls": [
+        "/api/create-chart"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/cron/celebrity-pages/route.ts",
+      "url": "/api/cron/celebrity-pages",
+      "urls": [
+        "/api/cron/celebrity-pages"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/cron/create-chart-nudge/route.ts",
+      "url": "/api/cron/create-chart-nudge",
+      "urls": [
+        "/api/cron/create-chart-nudge"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/cron/daily-transits/route.ts",
+      "url": "/api/cron/daily-transits",
+      "urls": [
+        "/api/cron/daily-transits"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/email/preview/[template]/route.ts",
+      "url": "/api/email/preview/:template",
+      "urls": [
+        "/api/email/preview/:template"
+      ],
+      "methods": [
+        "GET",
+        "OPTIONS"
+      ]
+    },
+    {
+      "id": "app/api/email/preview/transit/route.ts",
+      "url": "/api/email/preview/transit",
+      "urls": [
+        "/api/email/preview/transit"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/email/route.ts",
+      "url": "/api/email",
+      "urls": [
+        "/api/email"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/ephemeris/calculate/route.ts",
+      "url": "/api/ephemeris/calculate",
+      "urls": [
+        "/api/ephemeris/calculate"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/ephemeris/timeline/route.ts",
+      "url": "/api/ephemeris/timeline",
+      "urls": [
+        "/api/ephemeris/timeline"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/favorites/route.ts",
+      "url": "/api/favorites",
+      "urls": [
+        "/api/favorites"
+      ],
+      "methods": [
+        "GET",
+        "POST",
+        "PATCH",
+        "DELETE"
+      ]
+    },
+    {
+      "id": "app/api/feedback/route.ts",
+      "url": "/api/feedback",
+      "urls": [
+        "/api/feedback"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/friends/accept/route.ts",
+      "url": "/api/friends/accept",
+      "urls": [
+        "/api/friends/accept"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/friends/accept-email/route.ts",
+      "url": "/api/friends/accept-email",
+      "urls": [
+        "/api/friends/accept-email"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/friends/decline-email/route.ts",
+      "url": "/api/friends/decline-email",
+      "urls": [
+        "/api/friends/decline-email"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/friends/invite/route.ts",
+      "url": "/api/friends/invite",
+      "urls": [
+        "/api/friends/invite"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/friends/potential/route.ts",
+      "url": "/api/friends/potential",
+      "urls": [
+        "/api/friends/potential"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/friends/prompt-my-chart/route.ts",
+      "url": "/api/friends/prompt-my-chart",
+      "urls": [
+        "/api/friends/prompt-my-chart"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/friends/remove/route.ts",
+      "url": "/api/friends/remove",
+      "urls": [
+        "/api/friends/remove"
+      ],
+      "methods": [
+        "DELETE"
+      ]
+    },
+    {
+      "id": "app/api/friends/route.ts",
+      "url": "/api/friends",
+      "urls": [
+        "/api/friends"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/friends/search/route.ts",
+      "url": "/api/friends/search",
+      "urls": [
+        "/api/friends/search"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/friends/trust/route.ts",
+      "url": "/api/friends/trust",
+      "urls": [
+        "/api/friends/trust"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/locations/route.ts",
+      "url": "/api/locations",
+      "urls": [
+        "/api/locations"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/mcp/keys/[id]/route.ts",
+      "url": "/api/mcp/keys/:id",
+      "urls": [
+        "/api/mcp/keys/:id"
+      ],
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ]
+    },
+    {
+      "id": "app/api/mcp/keys/route.ts",
+      "url": "/api/mcp/keys",
+      "urls": [
+        "/api/mcp/keys"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/og/chart/[id]/route.ts",
+      "url": "/api/og/chart/:id",
+      "urls": [
+        "/api/og/chart/:id"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/public/transit-activations/route.ts",
+      "url": "/api/public/transit-activations",
+      "urls": [
+        "/api/public/transit-activations"
+      ],
+      "methods": [
+        "GET",
+        "OPTIONS"
+      ]
+    },
+    {
+      "id": "app/api/referrals/stats/route.ts",
+      "url": "/api/referrals/stats",
+      "urls": [
+        "/api/referrals/stats"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/referrals/visit/route.ts",
+      "url": "/api/referrals/visit",
+      "urls": [
+        "/api/referrals/visit"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/shared-chart/[id]/route.ts",
+      "url": "/api/shared-chart/:id",
+      "urls": [
+        "/api/shared-chart/:id"
+      ],
+      "methods": [
+        "DELETE"
+      ]
+    },
+    {
+      "id": "app/api/shared-chart/route.ts",
+      "url": "/api/shared-chart",
+      "urls": [
+        "/api/shared-chart"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/stripe/checkout/route.ts",
+      "url": "/api/stripe/checkout",
+      "urls": [
+        "/api/stripe/checkout"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/unsubscribe/daily-transits/route.ts",
+      "url": "/api/unsubscribe/daily-transits",
+      "urls": [
+        "/api/unsubscribe/daily-transits"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/unsubscribe/route.ts",
+      "url": "/api/unsubscribe",
+      "urls": [
+        "/api/unsubscribe"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/update-chart/route.ts",
+      "url": "/api/update-chart",
+      "urls": [
+        "/api/update-chart"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/user/[id]/personal-chart/route.ts",
+      "url": "/api/user/:id/personal-chart",
+      "urls": [
+        "/api/user/:id/personal-chart"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/user/check-name/route.ts",
+      "url": "/api/user/check-name",
+      "urls": [
+        "/api/user/check-name"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/user/email-preferences/route.ts",
+      "url": "/api/user/email-preferences",
+      "urls": [
+        "/api/user/email-preferences"
+      ],
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/user/personal-chart/route.ts",
+      "url": "/api/user/personal-chart",
+      "urls": [
+        "/api/user/personal-chart"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "id": "app/api/user/update-name/route.ts",
+      "url": "/api/user/update-name",
+      "urls": [
+        "/api/user/update-name"
+      ],
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "id": "app/api/webhooks/stripe/route.ts",
+      "url": "/api/webhooks/stripe",
+      "urls": [
+        "/api/webhooks/stripe"
+      ],
+      "methods": [
         "POST"
       ]
     },
@@ -457,469 +758,2486 @@
       "urls": [
         "/mcp"
       ],
-      "methods": []
+      "methods": [
+        "OPTIONS"
+      ]
     }
   ],
   "calls": [
     {
-      "source": "app/admin/page.tsx",
-      "target": "app/api/admin/venues/[id]/route.ts",
+      "source": "app/admin/bulk-email/page.tsx",
+      "target": "app/api/bulk-email/route.ts",
       "urls": [
-        "/api/admin/venues/:param"
+        "/api/bulk-email"
       ],
+      "weight": 4,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/page.tsx",
+      "target": "app/api/admin/stats/route.ts",
+      "urls": [
+        "/api/admin/stats"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/page.tsx",
+      "target": "app/api/admin/feedback/route.ts",
+      "urls": [
+        "/api/admin/feedback"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/page.tsx",
+      "target": "app/api/admin/votes/route.ts",
+      "urls": [
+        "/api/admin/votes"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/page.tsx",
+      "target": "app/api/admin/knowledge/documents/route.ts",
+      "urls": [
+        "/api/admin/knowledge/documents"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/page.tsx",
+      "target": "app/api/admin/knowledge/upload/route.ts",
+      "urls": [
+        "/api/admin/knowledge/upload"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/admin/page.tsx",
+      "target": "app/api/admin/knowledge/reingest/route.ts",
+      "urls": [
+        "/api/admin/knowledge/reingest"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/ephemeris/page.tsx",
+      "target": "app/api/chart/ephemeris/route.ts",
+      "urls": [
+        "/api/chart/ephemeris"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/ephemeris/page.tsx",
+      "target": "app/api/ephemeris/timeline/route.ts",
+      "urls": [
+        "/api/ephemeris/timeline"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/ephemeris/page.tsx",
+      "target": "app/api/ephemeris/calculate/route.ts",
+      "urls": [
+        "/api/ephemeris/calculate"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/unsubscribe/daily-transits/page.tsx",
+      "target": "app/api/unsubscribe/daily-transits/route.ts",
+      "urls": [
+        "/api/unsubscribe/daily-transits"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "app/unsubscribe/page.tsx",
+      "target": "app/api/unsubscribe/route.ts",
+      "urls": [
+        "/api/unsubscribe"
+      ],
+      "weight": 2,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/app-sidebar.tsx",
+      "target": "app/api/chart/[id]/route.ts",
+      "urls": [
+        "/api/chart/:param"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/app-sidebar.tsx",
+      "target": "app/api/create-chart/route.ts",
+      "urls": [
+        "/api/create-chart"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/block.tsx",
+      "target": "app/(chat)/api/document/route.ts",
+      "urls": [
+        "/api/document"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/chart-archetype-card.tsx",
+      "target": "app/api/feedback/route.ts",
+      "urls": [
+        "/api/feedback"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/chart-archetype-card.tsx",
+      "target": "app/api/chart/[id]/archetype-synthesis/route.ts",
+      "urls": [
+        "/api/chart/:param/archetype-synthesis"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/chart-context-indicator.tsx",
+      "target": "app/api/chart/[id]/set-default/route.ts",
+      "urls": [
+        "/api/chart/:param/set-default"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/hd-chart.tsx",
+      "target": "app/api/chart/route.ts",
+      "urls": [
+        "/api/chart"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/mcp-connection-settings.tsx",
+      "target": "app/api/mcp/keys/route.ts",
+      "urls": [
+        "/api/mcp/keys"
+      ],
+      "weight": 2,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/mcp-connection-settings.tsx",
+      "target": "app/api/mcp/keys/[id]/route.ts",
+      "urls": [
+        "/api/mcp/keys/:param"
+      ],
+      "weight": 2,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/message-actions.tsx",
+      "target": "app/(chat)/api/vote/route.ts",
+      "urls": [
+        "/api/vote"
+      ],
+      "weight": 2,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/modals/add-name-modal.tsx",
+      "target": "app/api/user/update-name/route.ts",
+      "urls": [
+        "/api/user/update-name"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/modals/bulk-import-modal.tsx",
+      "target": "app/api/bulk-import-charts/route.ts",
+      "urls": [
+        "/api/bulk-import-charts"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/modals/chart-permissions-modal.tsx",
+      "target": "app/api/chart/[id]/share/route.ts",
+      "urls": [
+        "/api/chart/:param/share"
+      ],
+      "weight": 2,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/modals/chart-permissions-modal.tsx",
+      "target": "app/api/chart/[id]/transfer/route.ts",
+      "urls": [
+        "/api/chart/:param/transfer"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/modals/chart-permissions-modal.tsx",
+      "target": "app/api/chart/[id]/revoke/route.ts",
+      "urls": [
+        "/api/chart/:param/revoke"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/modals/chart-permissions-modal.tsx",
+      "target": "app/api/chart/[id]/share-birth-info/route.ts",
+      "urls": [
+        "/api/chart/:param/share-birth-info"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/modals/chart-permissions-modal.tsx",
+      "target": "app/api/chart/[id]/unrevoke/route.ts",
+      "urls": [
+        "/api/chart/:param/unrevoke"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/modals/feedback-modal.tsx",
+      "target": "app/api/feedback/route.ts",
+      "urls": [
+        "/api/feedback"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/modals/invite-friend-modal.tsx",
+      "target": "app/api/friends/invite/route.ts",
+      "urls": [
+        "/api/friends/invite"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/modals/new-chart-modal.tsx",
+      "target": "app/api/locations/route.ts",
+      "urls": [
+        "/api/locations"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/modals/prompt-my-chart-modal.tsx",
+      "target": "app/api/friends/prompt-my-chart/route.ts",
+      "urls": [
+        "/api/friends/prompt-my-chart"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/modals/referral-modal.tsx",
+      "target": "app/api/friends/invite/route.ts",
+      "urls": [
+        "/api/friends/invite"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/modals/shared-chart-modal.tsx",
+      "target": "app/api/chart/[id]/check-access/route.ts",
+      "urls": [
+        "/api/chart/:param/check-access"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/modals/shared-chart-modal.tsx",
+      "target": "app/api/shared-chart/route.ts",
+      "urls": [
+        "/api/shared-chart"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/name-check-wrapper.tsx",
+      "target": "app/api/user/check-name/route.ts",
+      "urls": [
+        "/api/user/check-name"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/referral-visit-handler.tsx",
+      "target": "app/api/referrals/visit/route.ts",
+      "urls": [
+        "/api/referrals/visit"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/sidebar-charts.tsx",
+      "target": "app/api/friends/route.ts",
+      "urls": [
+        "/api/friends"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/sidebar-charts.tsx",
+      "target": "app/api/chart/[id]/mark-as-me/route.ts",
+      "urls": [
+        "/api/chart/:param/mark-as-me"
+      ],
+      "weight": 2,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/sidebar-charts.tsx",
+      "target": "app/api/update-chart/route.ts",
+      "urls": [
+        "/api/update-chart"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/sidebar-explore.tsx",
+      "target": "app/api/chart/ephemeris/route.ts",
+      "urls": [
+        "/api/chart/ephemeris"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/sidebar-explore.tsx",
+      "target": "app/api/ephemeris/timeline/route.ts",
+      "urls": [
+        "/api/ephemeris/timeline"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/sidebar-friends.tsx",
+      "target": "app/api/friends/route.ts",
+      "urls": [
+        "/api/friends"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/sidebar-friends.tsx",
+      "target": "app/api/friends/accept/route.ts",
+      "urls": [
+        "/api/friends/accept"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/sidebar-friends.tsx",
+      "target": "app/api/friends/remove/route.ts",
+      "urls": [
+        "/api/friends/remove"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/sidebar-friends.tsx",
+      "target": "app/api/friends/trust/route.ts",
+      "urls": [
+        "/api/friends/trust"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/sidebar-friends.tsx",
+      "target": "app/api/user/personal-chart/route.ts",
+      "urls": [
+        "/api/user/personal-chart"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/sidebar-friends.tsx",
+      "target": "app/api/user/[id]/personal-chart/route.ts",
+      "urls": [
+        "/api/user/:param/personal-chart"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/sidebar-history.tsx",
+      "target": "app/(chat)/api/chat/route.ts",
+      "urls": [
+        "/api/chat"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/sidebar-settings.tsx",
+      "target": "app/api/user/email-preferences/route.ts",
+      "urls": [
+        "/api/user/email-preferences"
+      ],
+      "weight": 2,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "components/version-footer.tsx",
+      "target": "app/(chat)/api/document/route.ts",
+      "urls": [
+        "/api/document"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "lib/atoms/chart.ts",
+      "target": "app/api/chart/[id]/route.ts",
+      "urls": [
+        "/api/chart/:param"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    },
+    {
+      "source": "lib/start-subscribe-checkout.ts",
+      "target": "app/api/stripe/checkout/route.ts",
+      "urls": [
+        "/api/stripe/checkout"
+      ],
+      "weight": 1,
+      "role": "direct",
+      "via": null
+    }
+  ],
+  "hops": [
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "referrerId",
+          "to": "validatedData.referrerId"
+        },
+        {
+          "name": "referredUserId",
+          "to": "newUser.id"
+        },
+        {
+          "name": "inviteEmail",
+          "to": "validatedData.email"
+        },
+        {
+          "name": "chartId",
+          "to": "validatedData.chartId"
+        },
+        {
+          "name": "completedAt",
+          "to": "new Date()"
+        },
+        {
+          "name": "referredUserSubscribed",
+          "to": "subscriptionStatus.isSubscribed"
+        },
+        {
+          "name": "rewardProcessed",
+          "to": "false"
+        }
+      ],
+      "source": "app/(auth)/actions.ts",
+      "target": "db/referrals",
+      "hop": "drizzle-write",
+      "label": "referrals.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "userId",
+          "to": "validatedData.referrerId"
+        },
+        {
+          "name": "friendId",
+          "to": "newUser.id"
+        },
+        {
+          "name": "status",
+          "to": "'accepted'"
+        }
+      ],
+      "source": "app/(auth)/actions.ts",
+      "target": "db/friends",
+      "hop": "drizzle-write",
+      "label": "friends.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "chartId",
+          "to": "validatedData.chartId"
+        },
+        {
+          "name": "userId",
+          "to": "newUser.id"
+        },
+        {
+          "name": "showBirthInfo",
+          "to": "false"
+        },
+        {
+          "name": "isTheirs",
+          "to": "false"
+        },
+        {
+          "name": "revoked",
+          "to": "false"
+        }
+      ],
+      "source": "app/(auth)/actions.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.insert"
+    },
+    {
       "weight": 3,
-      "role": "direct",
-      "via": null
+      "fields": [
+        {
+          "name": "referralCount",
+          "to": "completedReferrals.length"
+        }
+      ],
+      "source": "app/(auth)/actions.ts",
+      "target": "db/user",
+      "hop": "drizzle-write",
+      "label": "user.update"
     },
     {
-      "source": "app/admin/page.tsx",
-      "target": "app/api/admin/venues/[id]/events/route.ts",
-      "urls": [
-        "/api/admin/venues/:param/events"
-      ],
       "weight": 1,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/(auth)/actions.ts",
+      "target": "db/referrals",
+      "hop": "drizzle-read",
+      "label": "referrals.select"
     },
     {
-      "source": "app/admin/page.tsx",
-      "target": "app/api/admin/events/[id]/route.ts",
-      "urls": [
-        "/api/admin/events/:param"
-      ],
       "weight": 1,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/(auth)/actions.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
     },
     {
-      "source": "app/admin/page.tsx",
-      "target": "app/api/admin/events/[id]/image/route.ts",
-      "urls": [
-        "/api/admin/events/:param/image"
-      ],
       "weight": 1,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/api/admin/feedback/route.ts",
+      "target": "db/feedback",
+      "hop": "drizzle-read",
+      "label": "feedback.select"
     },
     {
-      "source": "app/admin/page.tsx",
-      "target": "app/api/admin/sources/[id]/route.ts",
-      "urls": [
-        "/api/admin/sources/:param"
-      ],
       "weight": 1,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/api/admin/openai-stats/route.ts",
+      "target": "lib/ai/monitoring.ts",
+      "hop": "call",
+      "label": "openaiMonitor.getStats"
     },
     {
-      "source": "app/admin/page.tsx",
-      "target": "app/api/admin/venues/route.ts",
-      "urls": [
-        "/api/admin/venues"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
+      "weight": 4,
+      "fields": [],
+      "source": "app/api/admin/stats/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
     },
     {
-      "source": "app/admin/page.tsx",
-      "target": "app/api/venues/route.ts",
-      "urls": [
-        "/api/venues"
-      ],
       "weight": 2,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/api/admin/stats/route.ts",
+      "target": "db/chart",
+      "hop": "drizzle-read",
+      "label": "chart.select"
     },
     {
-      "source": "app/admin/page.tsx",
-      "target": "app/api/admin/sources/[id]/approve/route.ts",
-      "urls": [
-        "/api/admin/sources/:param/approve"
-      ],
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/admin/stats/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-read",
+      "label": "SharedCharts.select"
+    },
+    {
       "weight": 2,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/api/admin/stats/route.ts",
+      "target": "db/friends",
+      "hop": "drizzle-read",
+      "label": "friends.select"
     },
     {
-      "source": "app/admin/page.tsx",
-      "target": "app/api/sources/route.ts",
-      "urls": [
-        "/api/sources"
-      ],
       "weight": 1,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/api/admin/stats/route.ts",
+      "target": "db/referrals",
+      "hop": "drizzle-read",
+      "label": "referrals.select"
     },
     {
-      "source": "app/admin/submissions/page.tsx",
-      "target": "app/api/admin/submissions/[id]/approve/route.ts",
-      "urls": [
-        "/api/admin/submissions/:param/approve"
-      ],
       "weight": 1,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/api/admin/stats/route.ts",
+      "target": "db/notifications",
+      "hop": "drizzle-read",
+      "label": "notifications.select"
     },
     {
-      "source": "app/admin/submissions/page.tsx",
-      "target": "app/api/admin/submissions/[id]/reject/route.ts",
-      "urls": [
-        "/api/admin/submissions/:param/reject"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/admin/syncs/[id]/page.tsx",
-      "target": "app/api/admin/syncs/[id]/route.ts",
-      "urls": [
-        "/api/admin/syncs/:param"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/admin/syncs/page.tsx",
-      "target": "app/api/admin/syncs/route.ts",
-      "urls": [
-        "/api/admin/syncs"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/components/CalendarSyncDialog.tsx",
-      "target": "app/api/user/preferences/route.ts",
-      "urls": [
-        "/api/user/preferences"
-      ],
       "weight": 2,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/api/admin/stats/route.ts",
+      "target": "db/message",
+      "hop": "drizzle-read",
+      "label": "message.select"
     },
     {
-      "source": "app/components/CalendarSyncPrompt.tsx",
-      "target": "app/api/user/preferences/route.ts",
-      "urls": [
-        "/api/user/preferences"
-      ],
       "weight": 1,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/api/admin/stats/route.ts",
+      "target": "db/feedback",
+      "hop": "drizzle-read",
+      "label": "feedback.select"
     },
     {
-      "source": "app/components/EventCard.tsx",
-      "target": "app/api/venues/route.ts",
-      "urls": [
-        "/api/venues"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/components/EventCard.tsx",
-      "target": "app/api/events/[id]/type/route.ts",
-      "urls": [
-        "/api/events/:param/type"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/components/EventCard.tsx",
-      "target": "app/api/admin/events/[id]/route.ts",
-      "urls": [
-        "/api/admin/events/:param"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/components/EventCard.tsx",
-      "target": "app/api/admin/events/[id]/venue/route.ts",
-      "urls": [
-        "/api/admin/events/:param/venue"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/components/EventCreateForm.tsx",
-      "target": "app/api/venues/route.ts",
-      "urls": [
-        "/api/venues"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/components/EventCreateForm.tsx",
-      "target": "app/api/admin/events/route.ts",
-      "urls": [
-        "/api/admin/events"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/components/Header.tsx",
-      "target": "app/api/config/force-simple-submit/route.ts",
-      "urls": [
-        "/api/config/force-simple-submit"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/components/IdeaForm.tsx",
-      "target": "app/api/ideas/route.ts",
-      "urls": [
-        "/api/ideas"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/components/IdeaStatus.tsx",
-      "target": "app/api/ideas/[id]/status/route.ts",
-      "urls": [
-        "/api/ideas/:param/status"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/components/IdeaVoteButton.tsx",
-      "target": "app/api/user/ideas/route.ts",
-      "urls": [
-        "/api/user/ideas"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/components/IdeaVoteButton.tsx",
-      "target": "app/api/ideas/[id]/vote/route.ts",
-      "urls": [
-        "/api/ideas/:param/vote"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/components/IdeasModal.tsx",
-      "target": "app/api/ideas/route.ts",
-      "urls": [
-        "/api/ideas"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/components/SourceAdminModal.tsx",
-      "target": "app/api/admin/sources/[id]/route.ts",
-      "urls": [
-        "/api/admin/sources/:param"
-      ],
-      "weight": 2,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/components/SourceFilter.tsx",
-      "target": "app/api/sources/route.ts",
-      "urls": [
-        "/api/sources"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/my-events/page.tsx",
-      "target": "app/api/saved-events/route.ts",
-      "urls": [
-        "/api/saved-events"
-      ],
-      "weight": 2,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/my-events/page.tsx",
-      "target": "app/api/series/route.ts",
-      "urls": [
-        "/api/series"
-      ],
-      "weight": 2,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/page.tsx",
-      "target": "app/api/saved-events/route.ts",
-      "urls": [
-        "/api/saved-events"
-      ],
       "weight": 3,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/api/admin/stats/route.ts",
+      "target": "db/vote",
+      "hop": "drizzle-read",
+      "label": "vote.select"
     },
     {
-      "source": "app/page.tsx",
-      "target": "app/api/events/[id]/route.ts",
-      "urls": [
-        "/api/events/:param"
-      ],
-      "weight": 2,
-      "role": "direct",
-      "via": null
-    },
-    {
-      "source": "app/page.tsx",
-      "target": "app/api/series/route.ts",
-      "urls": [
-        "/api/series"
-      ],
       "weight": 3,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/api/admin/stats/route.ts",
+      "target": "db/adminUserIds",
+      "hop": "drizzle-read",
+      "label": "adminUserIds.select"
     },
     {
-      "source": "app/page.tsx",
-      "target": "app/api/admin/events/[id]/route.ts",
-      "urls": [
-        "/api/admin/events/:param"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
+      "weight": 3,
+      "fields": [],
+      "source": "app/api/admin/votes/route.ts",
+      "target": "db/vote",
+      "hop": "drizzle-read",
+      "label": "vote.select"
     },
     {
-      "source": "app/page.tsx",
-      "target": "app/api/admin/sources/[id]/route.ts",
-      "urls": [
-        "/api/admin/sources/:param"
-      ],
       "weight": 1,
-      "role": "direct",
-      "via": null
+      "fields": [
+        {
+          "name": "campaignType",
+          "to": "emailType"
+        },
+        {
+          "name": "adminEmail",
+          "to": "adminEmail"
+        },
+        {
+          "name": "totalTargetUsers",
+          "to": "targetUsers"
+        },
+        {
+          "name": "status",
+          "to": "'in_progress'"
+        }
+      ],
+      "source": "app/api/bulk-email/route.ts",
+      "target": "db/emailCampaigns",
+      "hop": "drizzle-write",
+      "label": "emailCampaigns.insert"
     },
     {
-      "source": "app/page.tsx",
-      "target": "app/api/admin/events/[id]/image/route.ts",
-      "urls": [
-        "/api/admin/events/:param/image"
+      "weight": 2,
+      "fields": [
+        {
+          "name": "status",
+          "to": "'completed'"
+        },
+        {
+          "name": "completedAt",
+          "to": "new Date()"
+        }
       ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
+      "source": "app/api/bulk-email/route.ts",
+      "target": "db/emailCampaigns",
+      "hop": "drizzle-write",
+      "label": "emailCampaigns.update"
     },
     {
-      "source": "app/preview/page.tsx",
-      "target": "app/api/venues/route.ts",
-      "urls": [
-        "/api/venues"
+      "weight": 2,
+      "fields": [
+        {
+          "name": "campaignId",
+          "to": "campaign.id"
+        },
+        {
+          "name": "userEmail",
+          "to": "validatedUser.email"
+        },
+        {
+          "name": "userId",
+          "to": "user.id || null"
+        },
+        {
+          "name": "status",
+          "to": "'sent'"
+        }
       ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
+      "source": "app/api/bulk-email/route.ts",
+      "target": "db/emailCampaignSends",
+      "hop": "drizzle-write",
+      "label": "emailCampaignSends.insert"
     },
     {
-      "source": "app/preview/page.tsx",
-      "target": "app/api/submit-source/fetch-raw/route.ts",
-      "urls": [
-        "/api/submit-source/fetch-raw"
-      ],
       "weight": 1,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/api/bulk-email/route.ts",
+      "target": "db/emailCampaigns",
+      "hop": "drizzle-read",
+      "label": "emailCampaigns.select"
     },
     {
-      "source": "app/preview/page.tsx",
-      "target": "app/api/submit-source/normalize-event/route.ts",
-      "urls": [
-        "/api/submit-source/normalize-event"
-      ],
       "weight": 1,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/api/bulk-email/route.ts",
+      "target": "db/emailCampaignSends",
+      "hop": "drizzle-read",
+      "label": "emailCampaignSends.select"
     },
     {
-      "source": "app/preview/page.tsx",
-      "target": "app/api/submit-source/route.ts",
-      "urls": [
-        "/api/submit-source"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
+      "weight": 2,
+      "fields": [],
+      "source": "app/api/chart/[id]/archetype-synthesis/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-read",
+      "label": "SharedCharts.select"
     },
     {
-      "source": "app/source/[id]/page.tsx",
-      "target": "app/api/admin/sources/[id]/details/route.ts",
-      "urls": [
-        "/api/admin/sources/:param/details"
+      "weight": 3,
+      "fields": [
+        {
+          "name": "isMe",
+          "to": "false"
+        }
       ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
+      "source": "app/api/chart/[id]/mark-as-me/route.ts",
+      "target": "db/chart",
+      "hop": "drizzle-write",
+      "label": "chart.update"
     },
     {
-      "source": "app/submit/page.tsx",
-      "target": "app/api/submit-source/simple/route.ts",
-      "urls": [
-        "/api/submit-source/simple"
-      ],
-      "weight": 1,
-      "role": "direct",
-      "via": null
+      "weight": 2,
+      "fields": [],
+      "source": "app/api/chart/[id]/mark-as-me/route.ts",
+      "target": "db/chart",
+      "hop": "drizzle-read",
+      "label": "chart.select"
     },
     {
-      "source": "app/submit-v2/page.tsx",
-      "target": "app/api/config/force-simple-submit/route.ts",
-      "urls": [
-        "/api/config/force-simple-submit"
-      ],
       "weight": 1,
-      "role": "direct",
-      "via": null
+      "fields": [
+        {
+          "name": "revoked",
+          "to": "true"
+        }
+      ],
+      "source": "app/api/chart/[id]/revoke/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.update"
     },
     {
-      "source": "app/submit-v2/page.tsx",
-      "target": "app/api/user/sources/route.ts",
-      "urls": [
-        "/api/user/sources"
-      ],
       "weight": 1,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/api/chart/[id]/revoke/route.ts",
+      "target": "db/chart",
+      "hop": "drizzle-read",
+      "label": "chart.select"
     },
     {
-      "source": "app/submit-v2/page.tsx",
-      "target": "app/api/submit-source/detect/route.ts",
-      "urls": [
-        "/api/submit-source/detect"
-      ],
       "weight": 1,
-      "role": "direct",
-      "via": null
+      "fields": [],
+      "source": "app/api/chart/[id]/revoke/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-read",
+      "label": "SharedCharts.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/chart/[id]/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-read",
+      "label": "SharedCharts.select"
+    },
+    {
+      "weight": 2,
+      "fields": [
+        {
+          "name": "isMe",
+          "to": "false"
+        }
+      ],
+      "source": "app/api/chart/[id]/set-default/route.ts",
+      "target": "db/chart",
+      "hop": "drizzle-write",
+      "label": "chart.update"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "revoked",
+          "to": "false"
+        },
+        {
+          "name": "showBirthInfo",
+          "to": "showBirthInfo || false"
+        }
+      ],
+      "source": "app/api/chart/[id]/share/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.update"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "chartId",
+          "to": "chartId"
+        },
+        {
+          "name": "userId",
+          "to": "targetUserId"
+        },
+        {
+          "name": "showBirthInfo",
+          "to": "showBirthInfo || false"
+        },
+        {
+          "name": "isTheirs",
+          "to": "false"
+        },
+        {
+          "name": "revoked",
+          "to": "false"
+        }
+      ],
+      "source": "app/api/chart/[id]/share/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/chart/[id]/share/route.ts",
+      "target": "db/chart",
+      "hop": "drizzle-read",
+      "label": "chart.select"
+    },
+    {
+      "weight": 3,
+      "fields": [],
+      "source": "app/api/chart/[id]/share/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/chart/[id]/share/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-read",
+      "label": "SharedCharts.select"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "showBirthInfo",
+          "to": "true"
+        },
+        {
+          "name": "isTheirs",
+          "to": "false"
+        },
+        {
+          "name": "revoked",
+          "to": "false"
+        }
+      ],
+      "source": "app/api/chart/[id]/share-birth-info/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "showBirthInfo",
+          "to": "newShowBirthInfo"
+        }
+      ],
+      "source": "app/api/chart/[id]/share-birth-info/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.update"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/chart/[id]/share-birth-info/route.ts",
+      "target": "db/chart",
+      "hop": "drizzle-read",
+      "label": "chart.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/chart/[id]/share-birth-info/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-read",
+      "label": "SharedCharts.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/chart/[id]/share-birth-info/route.ts",
+      "target": "db/friends",
+      "hop": "drizzle-read",
+      "label": "friends.select"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "userId",
+          "to": "recipientUserId"
+        }
+      ],
+      "source": "app/api/chart/[id]/transfer/route.ts",
+      "target": "db/chart",
+      "hop": "drizzle-write",
+      "label": "chart.update"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/chart/[id]/transfer/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "chartId",
+          "to": "chartId"
+        },
+        {
+          "name": "userId",
+          "to": "session.user.id"
+        },
+        {
+          "name": "nameOverride",
+          "to": "null"
+        },
+        {
+          "name": "isTheirs",
+          "to": "true"
+        }
+      ],
+      "source": "app/api/chart/[id]/transfer/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/chart/[id]/transfer/route.ts",
+      "target": "db/chart",
+      "hop": "drizzle-read",
+      "label": "chart.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/chart/[id]/transfer/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-read",
+      "label": "SharedCharts.select"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "revoked",
+          "to": "false"
+        }
+      ],
+      "source": "app/api/chart/[id]/unrevoke/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.update"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/chart/[id]/unrevoke/route.ts",
+      "target": "db/chart",
+      "hop": "drizzle-read",
+      "label": "chart.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/chart/[id]/unrevoke/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-read",
+      "label": "SharedCharts.select"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "isMe",
+          "to": "false"
+        }
+      ],
+      "source": "app/api/chart/route.ts",
+      "target": "db/chart",
+      "hop": "drizzle-write",
+      "label": "chart.update"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/cron/daily-transits/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/cron/daily-transits/route.ts",
+      "target": "db/chart",
+      "hop": "drizzle-read",
+      "label": "chart.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/email/preview/transit/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/email/preview/transit/route.ts",
+      "target": "db/chart",
+      "hop": "drizzle-read",
+      "label": "chart.select"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "userId",
+          "to": "session.user.id"
+        },
+        {
+          "name": "message",
+          "to": "message.trim()"
+        },
+        {
+          "name": "userEmail",
+          "to": "session.user.email!"
+        },
+        {
+          "name": "userName",
+          "to": "session.user.name || session.user.email!.split('@')[0]"
+        }
+      ],
+      "source": "app/api/feedback/route.ts",
+      "target": "db/feedback",
+      "hop": "drizzle-write",
+      "label": "feedback.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/friends/decline-email/route.ts",
+      "target": "db/friends",
+      "hop": "drizzle-write",
+      "label": "friends.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/friends/decline-email/route.ts",
+      "target": "db/friends",
+      "hop": "drizzle-read",
+      "label": "friends.select"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "app/api/friends/potential/route.ts",
+      "target": "db/friends",
+      "hop": "drizzle-read",
+      "label": "friends.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/friends/potential/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-read",
+      "label": "SharedCharts.select"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "app/api/friends/potential/route.ts",
+      "target": "db/referralVisits",
+      "hop": "drizzle-read",
+      "label": "referralVisits.select"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "prompterId",
+          "to": "session.user.id"
+        },
+        {
+          "name": "promptedUserId",
+          "to": "friendId"
+        },
+        {
+          "name": "emailSent",
+          "to": "true"
+        }
+      ],
+      "source": "app/api/friends/prompt-my-chart/route.ts",
+      "target": "db/chartPrompts",
+      "hop": "drizzle-write",
+      "label": "chartPrompts.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/friends/prompt-my-chart/route.ts",
+      "target": "db/friends",
+      "hop": "drizzle-read",
+      "label": "friends.select"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "app/api/friends/prompt-my-chart/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/friends/search/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/friends/search/route.ts",
+      "target": "db/friends",
+      "hop": "drizzle-read",
+      "label": "friends.select"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "revoked",
+          "to": "false"
+        }
+      ],
+      "source": "app/api/friends/trust/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.update"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "chartId",
+          "to": "personalChart.id"
+        },
+        {
+          "name": "userId",
+          "to": "friendId"
+        },
+        {
+          "name": "isTheirs",
+          "to": "false"
+        },
+        {
+          "name": "revoked",
+          "to": "false"
+        }
+      ],
+      "source": "app/api/friends/trust/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/friends/trust/route.ts",
+      "target": "db/friends",
+      "hop": "drizzle-read",
+      "label": "friends.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/friends/trust/route.ts",
+      "target": "db/chart",
+      "hop": "drizzle-read",
+      "label": "chart.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/friends/trust/route.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-read",
+      "label": "SharedCharts.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/referrals/stats/route.ts",
+      "target": "db/referrals",
+      "hop": "drizzle-read",
+      "label": "referrals.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/referrals/stats/route.ts",
+      "target": "db/refe",
+      "hop": "drizzle-read",
+      "label": "refe.select"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "visitorId",
+          "to": "session.user.id"
+        }
+      ],
+      "source": "app/api/referrals/visit/route.ts",
+      "target": "db/referralVisits",
+      "hop": "drizzle-write",
+      "label": "referralVisits.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/referrals/visit/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/referrals/visit/route.ts",
+      "target": "db/friends",
+      "hop": "drizzle-read",
+      "label": "friends.select"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "transitEmailsEnabled",
+          "to": "false"
+        }
+      ],
+      "source": "app/api/unsubscribe/daily-transits/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-write",
+      "label": "user.update"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/unsubscribe/daily-transits/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 2,
+      "fields": [
+        {
+          "name": "emailOptOut",
+          "to": "true"
+        }
+      ],
+      "source": "app/api/unsubscribe/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-write",
+      "label": "user.update"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "app/api/unsubscribe/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/user/check-name/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "success",
+          "to": "true"
+        }
+      ],
+      "source": "app/api/user/email-preferences/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-write",
+      "label": "user.update"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/user/email-preferences/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "app/api/user/personal-chart/route.ts",
+      "target": "db/chart",
+      "hop": "drizzle-read",
+      "label": "chart.select"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "firstName",
+          "to": "firstName.trim()"
+        },
+        {
+          "name": "lastName",
+          "to": "lastName.trim()"
+        }
+      ],
+      "source": "app/api/user/update-name/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-write",
+      "label": "user.update"
+    },
+    {
+      "weight": 6,
+      "fields": [
+        {
+          "name": "stripeCustomerId",
+          "to": "customerId"
+        }
+      ],
+      "source": "app/api/webhooks/stripe/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-write",
+      "label": "user.update"
+    },
+    {
+      "weight": 3,
+      "fields": [],
+      "source": "app/api/webhooks/stripe/route.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "isMe",
+          "to": "false"
+        }
+      ],
+      "source": "lib/create-saved-chart.ts",
+      "target": "db/chart",
+      "hop": "drizzle-write",
+      "label": "chart.update"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/user",
+      "hop": "drizzle-write",
+      "label": "user.update"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "password",
+          "to": "hash"
+        },
+        {
+          "name": "firstName",
+          "to": "firstName || null"
+        },
+        {
+          "name": "lastName",
+          "to": "lastName || null"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/user",
+      "hop": "drizzle-write",
+      "label": "user.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "createdAt",
+          "to": "new Date()"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/chat",
+      "hop": "drizzle-write",
+      "label": "chat.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/vote",
+      "hop": "drizzle-write",
+      "label": "vote.delete"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/message",
+      "hop": "drizzle-write",
+      "label": "message.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/chat",
+      "hop": "drizzle-write",
+      "label": "chat.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/message",
+      "hop": "drizzle-write",
+      "label": "message.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "isUpvoted",
+          "to": "type === 'up'"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/vote",
+      "hop": "drizzle-write",
+      "label": "vote.update"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "isUpvoted",
+          "to": "type === 'up'"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/vote",
+      "hop": "drizzle-write",
+      "label": "vote.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "createdAt",
+          "to": "new Date()"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/document",
+      "hop": "drizzle-write",
+      "label": "document.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/suggestion",
+      "hop": "drizzle-write",
+      "label": "suggestion.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/document",
+      "hop": "drizzle-write",
+      "label": "document.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/suggestion",
+      "hop": "drizzle-write",
+      "label": "suggestion.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/chat",
+      "hop": "drizzle-write",
+      "label": "chat.update"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/favoritedMessage",
+      "hop": "drizzle-write",
+      "label": "favoritedMessage.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/favoritedMessage",
+      "hop": "drizzle-write",
+      "label": "favoritedMessage.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "createdAt",
+          "to": "new Date()"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/chart",
+      "hop": "drizzle-write",
+      "label": "chart.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "chartId",
+          "to": "input.chartId"
+        },
+        {
+          "name": "slug",
+          "to": "input.slug"
+        },
+        {
+          "name": "title",
+          "to": "input.title"
+        },
+        {
+          "name": "description",
+          "to": "input.description"
+        },
+        {
+          "name": "createdAt",
+          "to": "new Date()"
+        },
+        {
+          "name": "updatedAt",
+          "to": "new Date()"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/celebrityPage",
+      "hop": "drizzle-write",
+      "label": "celebrityPage.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/chart",
+      "hop": "drizzle-write",
+      "label": "chart.update"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/chart",
+      "hop": "drizzle-write",
+      "label": "chart.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "revoked",
+          "to": "false"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.update"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "rewardProcessed",
+          "to": "true"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/referrals",
+      "hop": "drizzle-write",
+      "label": "referrals.update"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeDocument",
+      "hop": "drizzle-write",
+      "label": "knowledgeDocument.insert"
+    },
+    {
+      "weight": 2,
+      "fields": [
+        {
+          "name": "ingestionError",
+          "to": "ingestionError ?? null"
+        },
+        {
+          "name": "updatedAt",
+          "to": "new Date()"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeDocument",
+      "hop": "drizzle-write",
+      "label": "knowledgeDocument.update"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeEvidence",
+      "hop": "drizzle-write",
+      "label": "knowledgeEvidence.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeSummary",
+      "hop": "drizzle-write",
+      "label": "knowledgeSummary.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeRelationDocument",
+      "hop": "drizzle-write",
+      "label": "knowledgeRelationDocument.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeConceptAliasDocument",
+      "hop": "drizzle-write",
+      "label": "knowledgeConceptAliasDocument.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeConceptDocument",
+      "hop": "drizzle-write",
+      "label": "knowledgeConceptDocument.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeChunk",
+      "hop": "drizzle-write",
+      "label": "knowledgeChunk.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeRelation",
+      "hop": "drizzle-write",
+      "label": "knowledgeRelation.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeConcept",
+      "hop": "drizzle-write",
+      "label": "knowledgeConcept.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeConceptAlias",
+      "hop": "drizzle-write",
+      "label": "knowledgeConceptAlias.delete"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "target",
+          "to": "knowledgeConcept.slug"
+        },
+        {
+          "name": "kind",
+          "to": "sql`excluded.\"kind\"`"
+        },
+        {
+          "name": "name",
+          "to": "sql`excluded.\"name\"`"
+        },
+        {
+          "name": "description",
+          "to": "sql`excluded.\"description\"`"
+        },
+        {
+          "name": "updatedAt",
+          "to": "new Date()"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeConcept",
+      "hop": "drizzle-write",
+      "label": "knowledgeConcept.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "conceptId",
+          "to": "resolvedConceptIdByInputId.get(alias.conceptId) ?? alias.conceptId"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeConceptDocument",
+      "hop": "drizzle-write",
+      "label": "knowledgeConceptDocument.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "id",
+          "to": "knowledgeConceptAlias.id"
+        },
+        {
+          "name": "conceptId",
+          "to": "knowledgeConceptAlias.conceptId"
+        },
+        {
+          "name": "normalizedAlias",
+          "to": "knowledgeConceptAlias.normalizedAlias"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeConceptAlias",
+      "hop": "drizzle-write",
+      "label": "knowledgeConceptAlias.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "fromConceptId",
+          "to": "resolvedConceptIdByInputId.get(relation.fromConceptId) ??"
+        },
+        {
+          "name": "toConceptId",
+          "to": "resolvedConceptIdByInputId.get(relation.toConceptId) ?? relation.toConce"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeConceptAliasDocument",
+      "hop": "drizzle-write",
+      "label": "knowledgeConceptAliasDocument.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "id",
+          "to": "knowledgeRelation.id"
+        },
+        {
+          "name": "fromConceptId",
+          "to": "knowledgeRelation.fromConceptId"
+        },
+        {
+          "name": "relationType",
+          "to": "knowledgeRelation.relationType"
+        },
+        {
+          "name": "toConceptId",
+          "to": "knowledgeRelation.toConceptId"
+        },
+        {
+          "name": "relationId",
+          "to": "relation.id"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeRelation",
+      "hop": "drizzle-write",
+      "label": "knowledgeRelation.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeRelationDocument",
+      "hop": "drizzle-write",
+      "label": "knowledgeRelationDocument.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "conceptId",
+          "to": "resolvedConceptIdByInputId.get(summary.conceptId) ?? summary.conceptId"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeChunk",
+      "hop": "drizzle-write",
+      "label": "knowledgeChunk.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "conceptId",
+          "to": "resolvedConceptIdByInputId.get(item.conceptId) ?? item.conceptId"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeSummary",
+      "hop": "drizzle-write",
+      "label": "knowledgeSummary.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "updatedAt",
+          "to": "new Date()"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeEvidence",
+      "hop": "drizzle-write",
+      "label": "knowledgeEvidence.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/mcpApiKey",
+      "hop": "drizzle-write",
+      "label": "mcpApiKey.insert"
+    },
+    {
+      "weight": 3,
+      "fields": [
+        {
+          "name": "revokedAt",
+          "to": "new Date()"
+        }
+      ],
+      "source": "lib/db/queries.ts",
+      "target": "db/mcpApiKey",
+      "hop": "drizzle-write",
+      "label": "mcpApiKey.update"
+    },
+    {
+      "weight": 4,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/chat",
+      "hop": "drizzle-read",
+      "label": "chat.select"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/message",
+      "hop": "drizzle-read",
+      "label": "message.select"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/vote",
+      "hop": "drizzle-read",
+      "label": "vote.select"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/document",
+      "hop": "drizzle-read",
+      "label": "document.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/suggestion",
+      "hop": "drizzle-read",
+      "label": "suggestion.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/favoritedMessage",
+      "hop": "drizzle-read",
+      "label": "favoritedMessage.select"
+    },
+    {
+      "weight": 3,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/celebrityPage",
+      "hop": "drizzle-read",
+      "label": "celebrityPage.select"
+    },
+    {
+      "weight": 5,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/chart",
+      "hop": "drizzle-read",
+      "label": "chart.select"
+    },
+    {
+      "weight": 4,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-read",
+      "label": "SharedCharts.select"
+    },
+    {
+      "weight": 3,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/referrals",
+      "hop": "drizzle-read",
+      "label": "referrals.select"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeDocument",
+      "hop": "drizzle-read",
+      "label": "knowledgeDocument.select"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeChunk",
+      "hop": "drizzle-read",
+      "label": "knowledgeChunk.select"
+    },
+    {
+      "weight": 3,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeConceptDocument",
+      "hop": "drizzle-read",
+      "label": "knowledgeConceptDocument.select"
+    },
+    {
+      "weight": 3,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeRelationDocument",
+      "hop": "drizzle-read",
+      "label": "knowledgeRelationDocument.select"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeConceptAliasDocument",
+      "hop": "drizzle-read",
+      "label": "knowledgeConceptAliasDocument.select"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeSummary",
+      "hop": "drizzle-read",
+      "label": "knowledgeSummary.select"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeEvidence",
+      "hop": "drizzle-read",
+      "label": "knowledgeEvidence.select"
+    },
+    {
+      "weight": 4,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeRelation",
+      "hop": "drizzle-read",
+      "label": "knowledgeRelation.select"
+    },
+    {
+      "weight": 3,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeConcept",
+      "hop": "drizzle-read",
+      "label": "knowledgeConcept.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/knowledgeConceptAlias",
+      "hop": "drizzle-read",
+      "label": "knowledgeConceptAlias.select"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "lib/db/queries.ts",
+      "target": "db/mcpApiKey",
+      "hop": "drizzle-read",
+      "label": "mcpApiKey.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/email/index.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 3,
+      "fields": [
+        {
+          "name": "revoked",
+          "to": "false"
+        },
+        {
+          "name": "showBirthInfo",
+          "to": "existingShare.showBirthInfo || false"
+        }
+      ],
+      "source": "lib/friends.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.update"
+    },
+    {
+      "weight": 1,
+      "fields": [
+        {
+          "name": "userId",
+          "to": "targetUserId"
+        },
+        {
+          "name": "showBirthInfo",
+          "to": "false"
+        },
+        {
+          "name": "isTheirs",
+          "to": "false"
+        },
+        {
+          "name": "revoked",
+          "to": "false"
+        }
+      ],
+      "source": "lib/friends.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-write",
+      "label": "SharedCharts.insert"
+    },
+    {
+      "weight": 2,
+      "fields": [
+        {
+          "name": "status",
+          "to": "'accepted'"
+        },
+        {
+          "name": "updatedAt",
+          "to": "new Date()"
+        }
+      ],
+      "source": "lib/friends.ts",
+      "target": "db/friends",
+      "hop": "drizzle-write",
+      "label": "friends.update"
+    },
+    {
+      "weight": 2,
+      "fields": [
+        {
+          "name": "userId",
+          "to": "requesterId"
+        },
+        {
+          "name": "status",
+          "to": "'pending'"
+        }
+      ],
+      "source": "lib/friends.ts",
+      "target": "db/friends",
+      "hop": "drizzle-write",
+      "label": "friends.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/friends.ts",
+      "target": "db/friends",
+      "hop": "drizzle-write",
+      "label": "friends.delete"
+    },
+    {
+      "weight": 2,
+      "fields": [],
+      "source": "lib/friends.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 3,
+      "fields": [],
+      "source": "lib/friends.ts",
+      "target": "db/friends",
+      "hop": "drizzle-read",
+      "label": "friends.select"
+    },
+    {
+      "weight": 3,
+      "fields": [],
+      "source": "lib/friends.ts",
+      "target": "db/SharedCharts",
+      "hop": "drizzle-read",
+      "label": "SharedCharts.select"
+    },
+    {
+      "weight": 2,
+      "fields": [
+        {
+          "name": "userId",
+          "to": "prompterData.id"
+        },
+        {
+          "name": "fromUserId",
+          "to": "userId"
+        },
+        {
+          "name": "type",
+          "to": "'chart_ready'"
+        },
+        {
+          "name": "title",
+          "to": "`${chartOwnerName} set up their chart!`"
+        },
+        {
+          "name": "message",
+          "to": "`Great news! ${chartOwnerName} has set up their My Chart and your relati"
+        },
+        {
+          "name": "friendId",
+          "to": "userId"
+        },
+        {
+          "name": "friendName",
+          "to": "chartOwnerName"
+        },
+        {
+          "name": "chartName",
+          "to": "chartName"
+        },
+        {
+          "name": "emailSent",
+          "to": "false"
+        }
+      ],
+      "source": "lib/notifications.ts",
+      "target": "db/notifications",
+      "hop": "drizzle-write",
+      "label": "notifications.insert"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/notifications.ts",
+      "target": "db/chart",
+      "hop": "drizzle-read",
+      "label": "chart.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/notifications.ts",
+      "target": "db/chartPrompts",
+      "hop": "drizzle-read",
+      "label": "chartPrompts.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/notifications.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "lib/stripe-rewards.ts",
+      "target": "db/user",
+      "hop": "drizzle-read",
+      "label": "user.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "scripts/backfill-knowledge.ts",
+      "target": "db/knowledgeDocument",
+      "hop": "drizzle-read",
+      "label": "knowledgeDocument.select"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "scripts/regenerate-charts.ts",
+      "target": "db/chart",
+      "hop": "drizzle-write",
+      "label": "chart.update"
+    },
+    {
+      "weight": 1,
+      "fields": [],
+      "source": "scripts/regenerate-charts.ts",
+      "target": "db/chart",
+      "hop": "drizzle-read",
+      "label": "chart.select"
     }
   ]
 }

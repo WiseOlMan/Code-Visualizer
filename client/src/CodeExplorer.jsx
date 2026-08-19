@@ -137,6 +137,10 @@ export class CodeExplorer extends CodeGraphEngine {
                   style={{ fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)', borderColor: v.callsBorder, color: v.callsColor }}>
                   {v.callsLabel}
                 </button>
+                <button type="button" className="btn btn-ghost" onClick={v.toggleHops}
+                  style={{ fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)', borderColor: v.hopsBorder, color: v.hopsColor }}>
+                  {v.hopsLabel}
+                </button>
                 <button type="button" className="btn btn-ghost" onClick={v.toggleGenerated}
                   style={{ fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)', borderColor: v.generatedBorder, color: v.generatedColor }}>
                   {v.generatedLabel}
@@ -257,6 +261,96 @@ export class CodeExplorer extends CodeGraphEngine {
           >
             <SidebarIcon open={v.sidebarOpen} />
           </button>
+
+          {v.hopCard && (
+            <div
+              ref={v.hopCardRef}
+              style={{
+                position: 'absolute', left: v.hopCard.x, top: v.hopCard.y, zIndex: 6,
+                width: 292, pointerEvents: 'auto',
+                background: 'var(--color-surface)', border: '1px solid var(--color-neutral-800)',
+                borderLeft: `3px solid ${v.hopCard.color}`,
+                boxShadow: 'var(--shadow-md)',
+              }}
+            >
+              <div style={{
+                display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8,
+                padding: '10px 12px', borderBottom: '1px solid var(--color-neutral-900)',
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase',
+                    color: v.hopCard.color, fontWeight: 500,
+                  }}>{v.hopCard.kindLabel}</div>
+                  <div style={{
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontSize: 13, color: 'var(--color-text)', marginTop: 2, wordBreak: 'break-all',
+                  }}>{v.hopCard.label}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none' }}>
+                  {v.hopCard.change && (
+                    <span style={{ fontSize: 11, color: '#2EFF7A' }}>{v.hopCard.change}</span>
+                  )}
+                  <button type="button" className="btn btn-icon btn-ghost" onClick={v.clearHop}
+                    style={{ width: 28, height: 28, color: 'var(--color-neutral-500)' }}>✕</button>
+                </div>
+              </div>
+              <div style={{ padding: '8px 8px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {v.hopCard.urls.map((u) => (
+                  <div key={u} style={{
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontSize: 11, color: 'var(--color-accent-300)', padding: '4px 8px', wordBreak: 'break-all',
+                  }}>{u}</div>
+                ))}
+                {v.hopCard.fields.map((f) => (
+                  <div key={f.name} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px',
+                    background: 'rgba(46,255,122,0.12)',
+                  }}>
+                    <span style={{
+                      width: 110, flexShrink: 0,
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                      fontSize: 12, color: '#2EFF7A',
+                    }}>{f.name}</span>
+                    {f.from ? (
+                      <>
+                        <span style={{
+                          flex: 1, minWidth: 0,
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                          fontSize: 12, color: 'var(--color-neutral-500)', wordBreak: 'break-all',
+                        }}>{f.from}</span>
+                        <span style={{ flex: 'none', fontSize: 12, color: 'var(--color-neutral-500)' }}>→</span>
+                        <span style={{
+                          flex: 1, minWidth: 0,
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                          fontSize: 12, color: 'var(--color-text)', wordBreak: 'break-all',
+                        }}>{f.to || '—'}</span>
+                      </>
+                    ) : (
+                      <span style={{
+                        flex: 1, minWidth: 0,
+                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                        fontSize: 12, color: 'var(--color-text)', wordBreak: 'break-all',
+                      }}>{f.to || '—'}</span>
+                    )}
+                  </div>
+                ))}
+                {!v.hopCard.fields.length && !v.hopCard.urls.length && (
+                  <div style={{ fontSize: 12, color: 'var(--color-neutral-500)', padding: '4px 8px' }}>
+                    {v.hopCard.from} → {v.hopCard.to}
+                  </div>
+                )}
+              </div>
+              {!!v.hopCard.protected?.length && (
+                <div style={{
+                  padding: '8px 12px 12px', borderTop: '1px solid var(--color-neutral-900)',
+                  fontSize: 11, lineHeight: '16px', color: 'var(--color-neutral-500)',
+                }}>
+                  Protected, not in this write: {v.hopCard.protected.join(', ')}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {sel && (

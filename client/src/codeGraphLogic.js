@@ -7,6 +7,71 @@ const INK = { bg: '#161826', text: '#e9e9ed', edge: '#75798c', call: '#9184d9', 
 /** Branch-diff colors — neon green adds / edit rings; red deletions.
  *  Kept out of the folder palette so group greens never read as "added". */
 const GIT = { add: '#2EFF7A', edit: '#2EFF7A', del: '#FF4D5E', delDim: '#FF4D5E99' };
+const HOP_COLOR = {
+  http: '#9184d9',
+  call: '#b5abfc',
+  'prisma-write': '#2EFF7A',
+  'prisma-read': '#6ec8d4',
+  'drizzle-write': '#2EFF7A',
+  'drizzle-read': '#6ec8d4',
+  job: '#c890d4',
+};
+const HOP_KIND_LABEL = {
+  http: 'HTTP',
+  call: 'CALL',
+  'prisma-write': 'Prisma write',
+  'prisma-read': 'Prisma read',
+  'drizzle-write': 'DB write',
+  'drizzle-read': 'DB read',
+  job: 'JOB',
+};
+
+function hopKindOf(l) {
+  if (!l) return null;
+  if (l.kind === 'call') return 'http';
+  if (l.kind === 'hop') return l.hop || 'call';
+  return null;
+}
+function hopColor(l) {
+  return HOP_COLOR[hopKindOf(l)] || INK.edge;
+}
+function hopLabelOf(l) {
+  if (l?.kind === 'call') {
+    const url = (l.urls && l.urls[0]) || l.label || '/';
+    return url.startsWith('HTTP') ? url : `HTTP ${url}`;
+  }
+  if (l?.label) return l.label;
+  return '';
+}
+function hopKeyOf(l) {
+  if (!l) return null;
+  return l._key || `${l.kind}|${l.s?.id || ''}=>${l.t?.id || ''}|${hopLabelOf(l)}`;
+}
+function linkCurve(l) {
+  const end = l.t.isEndpoint ? socketPort(l.t, l.s.x, l.s.y) : { x: l.t.x, y: l.t.y };
+  const start = l.s.isEndpoint ? socketPort(l.s, l.t.x, l.t.y) : { x: l.s.x, y: l.s.y };
+  const mx = (start.x + end.x) / 2, my = (start.y + end.y) / 2;
+  const dx = end.x - start.x, dy = end.y - start.y;
+  const typed = hopKindOf(l);
+  const bow = typed ? 0.045 : 0.09;
+  return { start, end, cx: mx - dy * bow, cy: my + dx * bow };
+}
+function bezierAt(start, c, end, t) {
+  const u = 1 - t;
+  return {
+    x: u * u * start.x + 2 * u * t * c.x + t * t * end.x,
+    y: u * u * start.y + 2 * u * t * c.y + t * t * end.y,
+  };
+}
+function distToCurve(p, start, c, end) {
+  let best = 1e9;
+  for (let i = 0; i <= 20; i++) {
+    const q = bezierAt(start, c, end, i / 20);
+    const d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
+    if (d < best) best = d;
+  }
+  return Math.sqrt(best);
+}
 
 function normGitStatus(status) {
   const s = String(status || '').toUpperCase().slice(0, 1);
@@ -289,9 +354,9 @@ function folderRects(ns) {
 
 export class CodeGraphEngine extends React.Component {
   state = {
-    query: '', selId: null, code: null, codeDiff: null, sigTick: 0, labelTick: 0, panelTab: 'details',
+    query: '', selId: null, selHopKey: null, code: null, codeDiff: null, sigTick: 0, labelTick: 0, panelTab: 'details',
     folderDepth: 2, hideTests: true, hideGenerated: true,
-    showCalls: true, highlightGit: true, onlyGit: false,
+    showCalls: true, showHops: true, highlightGit: true, onlyGit: false,
     branchInput: '',
     stats: '', repoName: '',
     gitSummary: '', gitStale: false, gitMissing: 0, gitSourcesNewer: 0, gitStaleReason: null, gitFileCount: 0,
@@ -301,9 +366,10 @@ export class CodeGraphEngine extends React.Component {
     super(p);
     this.canvasRef = React.createRef();
     this.legendRef = React.createRef();
+    this.hopCardRef = React.createRef();
     this.view = { x: 0, y: 0, k: 1 };
     this.nodes = []; this.links = []; this.byId = {};
-    this.hover = null; this.drag = null; this.pan = null;
+    this.hover = null; this.hoverHop = null; this.drag = null; this.pan = null;
     this.alpha = 1;
     if (p.initialOnlyGit) this.state = { ...this.state, onlyGit: true };
   }
@@ -373,11 +439,11 @@ export class CodeGraphEngine extends React.Component {
   applyGraph(d, ep, { soft = false } = {}) {
     if (!d) return;
     if (!soft || !this.nodes?.length || this.state.repoName !== (d.repo || this.state.repoName)) {
-      this.init(d, ep || { endpoints: [], calls: [] });
+      this.init(d, ep || { endpoints: [], calls: [], hops: [] });
       return;
     }
     const prevPos = Object.fromEntries(this.nodes.map(n => [n.id, { x: n.x, y: n.y, vx: n.vx, vy: n.vy }]));
-    this.init(d, ep || { endpoints: [], calls: [] });
+    this.init(d, ep || { endpoints: [], calls: [], hops: [] });
     for (const n of this.nodes) {
       const p = prevPos[n.id];
       if (!p) continue;
@@ -531,6 +597,7 @@ export class CodeGraphEngine extends React.Component {
     const showCalls = this.state.showCalls;
     for (const l of this.links || []) {
       if (l.kind === 'call' && !showCalls) continue;
+      if (l.kind === 'hop' && this.state.showHops === false) continue;
       const other = l.s === node ? l.t : l.t === node ? l.s : null;
       if (!other || seen.has(other.id)) continue;
       seen.add(other.id);
@@ -598,7 +665,7 @@ export class CodeGraphEngine extends React.Component {
     if (node) this.fitSelection(node);
     const openSource = !!(node && node.gitChanged);
     this.setState({
-      selId: id, code: null, codeDiff: null,
+      selId: id, selHopKey: node ? null : this.state.selHopKey, code: null, codeDiff: null,
       panelTab: openSource ? 'source' : 'details',
     }, () => {
       if (!node || this.state.selId !== node.id) return;
@@ -663,6 +730,7 @@ export class CodeGraphEngine extends React.Component {
 
     const epList = ((ep && ep.endpoints) || []).filter(e => !/(^|\/)controllers\//.test(e.id));
     const calls = (ep && ep.calls) || [];
+    const hops = (ep && ep.hops) || [];
     this.endpointById = Object.fromEntries(epList.map(e => [e.id, e]));
 
     // union of everything referenced anywhere — endpoints and callers the
@@ -670,6 +738,7 @@ export class CodeGraphEngine extends React.Component {
     const ids = new Set(d.nodes.map(n => n.id));
     for (const e of epList) ids.add(e.id);
     for (const c of calls) { ids.add(c.source); ids.add(c.target); }
+    for (const h of hops) { ids.add(h.source); ids.add(h.target); }
     const raw = Object.fromEntries(d.nodes.map(n => [n.id, n]));
 
     this.groups = deriveGroups([...ids]);
@@ -677,9 +746,13 @@ export class CodeGraphEngine extends React.Component {
     for (const c of calls) callIn[c.target] = (callIn[c.target] || 0) + 1;
 
     this.nodes = [...ids].map(id => {
-      const base = raw[id] || { id, name: id.split('/').pop(), inDeg: 0, outDeg: 0 };
+      const base = raw[id] || {
+        id, name: id.split('/').pop(), inDeg: 0, outDeg: 0,
+        synthetic: /^(prisma|jobs|db)\//.test(id),
+      };
       const g = this.groups.of(id);
-      const meta = this.endpointById[id] || (looksLikeEndpoint(id) ? { id, url: urlFromPath(id), methods: [] } : null);
+      const meta = base.synthetic ? null
+        : (this.endpointById[id] || (looksLikeEndpoint(id) ? { id, url: urlFromPath(id), methods: [] } : null));
       if (meta && !this.endpointById[id]) this.endpointById[id] = meta;
       const gi = this.groups.keys.indexOf(g.key);
       const a = ((gi < 0 ? this.groups.keys.length : gi) / (this.groups.keys.length + 1)) * Math.PI * 2;
@@ -708,6 +781,17 @@ export class CodeGraphEngine extends React.Component {
         s: this.byId[c.source],
         t: this.byId[c.target],
       })),
+      ...hops.map(h => ({
+        ...h,
+        kind: 'hop',
+        hop: h.hop,
+        label: h.label,
+        fields: h.fields || [],
+        protected: h.protected || [],
+        s: this.byId[h.source],
+        t: this.byId[h.target],
+        _key: `${h.hop}|${h.source}=>${h.target}|${h.label}`,
+      })),
     ].filter(l => l.s && l.t);
 
     this.applyFilter();
@@ -720,7 +804,8 @@ export class CodeGraphEngine extends React.Component {
     const nCalls = calls.filter(c => !c.role || c.role === 'direct').length;
     this.setState({
       repoName: (d.repo || 'codebase'),
-      stats: `${this.nodes.length} files · ${d.links.length} imports · ${nEp} endpoints · ${nCalls} calls`,
+      selHopKey: null,
+      stats: `${this.nodes.length} files · ${d.links.length} imports · ${nEp} endpoints · ${nCalls} calls · ${hops.length} hops`,
     });
     this.applyGitOverlay(this.props.gitInfo);
     this.kick(1);
@@ -851,6 +936,7 @@ export class CodeGraphEngine extends React.Component {
     const hideTests = this.state.hideTests;
     const hideGenerated = this.state.hideGenerated;
     const showCalls = this.state.showCalls;
+    const showHops = this.state.showHops !== false;
     const onlyGit = this.state.onlyGit;
     for (const n of this.nodes) {
       // "Changed only" wins: show every git-touched file (incl. tests) and keep
@@ -863,8 +949,16 @@ export class CodeGraphEngine extends React.Component {
           (hideGenerated && isGenerated(n.id));
       }
     }
+    // Typed hops (Prisma, jobs, method calls) should still reach their target
+    // when "changed files only" is on — otherwise the write/job disappears.
+    if (onlyGit && showHops) {
+      for (const l of this.links) {
+        if (!hopKindOf(l)) continue;
+        if (l.s?.gitChanged && l.t) l.t.off = false;
+      }
+    }
     for (const l of this.links) {
-      let off = l.s.off || l.t.off || (l.kind === 'call' && !showCalls);
+      let off = l.s.off || l.t.off || (l.kind === 'call' && !showCalls) || (l.kind === 'hop' && !showHops);
       // SDK calls: when generated client is visible, show caller→client→endpoint;
       // when hidden, collapse to the direct caller→endpoint edge.
       if (!off && l.kind === 'call') {
@@ -874,8 +968,10 @@ export class CodeGraphEngine extends React.Component {
           off = true;
         }
       }
-      // In changed-only mode, keep edges between two visible changed files.
-      if (!off && onlyGit && (!l.s.gitChanged || !l.t.gitChanged)) off = true;
+      if (!off && onlyGit) {
+        if (hopKindOf(l)) off = !l.s.gitChanged && !l.t.gitChanged;
+        else if (!l.s.gitChanged || !l.t.gitChanged) off = true;
+      }
       l.off = off;
     }
     this.cells = null; this.frames = null;
@@ -944,6 +1040,37 @@ export class CodeGraphEngine extends React.Component {
     return best;
   }
 
+  pickHop(px, py) {
+    if (this.state.showHops === false) return null;
+    const p = this.toWorld(px, py);
+    const slop = 10 / this.view.k;
+    let best = null, bd = slop;
+    // Match node picking: with a selection, only incident hops are interactive.
+    const sel = this.state.selId ? this.byId[this.state.selId] : null;
+    for (const l of this.activeLinks || this.links || []) {
+      if (l.off || !hopKindOf(l) || !l.s || !l.t) continue;
+      if (sel && !sel.off && l.s !== sel && l.t !== sel) continue;
+      const c = linkCurve(l);
+      const d = distToCurve(p, c.start, { x: c.cx, y: c.cy }, c.end);
+      if (d < bd) { bd = d; best = l; }
+    }
+    return best;
+  }
+
+  selectHop(link) {
+    const key = link ? hopKeyOf(link) : null;
+    if (key === this.state.selHopKey) {
+      this.kick();
+      return;
+    }
+    this.setState({ selHopKey: key }, () => this.positionHopCard());
+    this.kick();
+  }
+
+  worldToScreen(wx, wy) {
+    return { x: this.view.x + wx * this.view.k, y: this.view.y + wy * this.view.k };
+  }
+
   bindEvents(cv) {
     const pos = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
     const onWin = (ev, fn) => { window.addEventListener(ev, fn); (this._winListeners || (this._winListeners = [])).push([ev, fn]); };
@@ -951,6 +1078,7 @@ export class CodeGraphEngine extends React.Component {
     cv.addEventListener('mousedown', e => {
       const [x, y] = pos(e), n = this.pick(x, y);
       if (n) { this.drag = n; n.fixed = true; this.kick(0.3); }
+      else if (this.pickHop(x, y)) { this._pressHop = true; }
       else this.pan = { x: e.clientX, y: e.clientY, vx: this.view.x, vy: this.view.y };
       cv.style.cursor = 'grabbing';
     });
@@ -958,10 +1086,17 @@ export class CodeGraphEngine extends React.Component {
       if (this._paused || this._dead) return;
       const t = e.target;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
-      if (e.key === 'Escape' && this.state.selId) {
-        e.preventDefault();
-        this.select(null);
-        return;
+      if (e.key === 'Escape') {
+        if (this.state.selHopKey) {
+          e.preventDefault();
+          this.selectHop(null);
+          return;
+        }
+        if (this.state.selId) {
+          e.preventDefault();
+          this.select(null);
+          return;
+        }
       }
       if (e.key !== 'Tab') return;
       if (!this.labelRing().length) return;
@@ -982,11 +1117,13 @@ export class CodeGraphEngine extends React.Component {
       } else {
         const inside = x >= 0 && y >= 0 && x <= this.w && y <= this.h;
         const h = inside ? this.pick(x, y) : null;
-        if (h !== this.hover) {
+        const hop = !h && inside ? this.pickHop(x, y) : null;
+        if (h !== this.hover || hop !== this.hoverHop) {
           this.hover = h;
+          this.hoverHop = hop;
           this.resetLabelCycle(h?.id || (this.state.selId || null));
           this.kick();
-          cv.style.cursor = h ? 'pointer' : 'grab';
+          cv.style.cursor = (h || hop) ? 'pointer' : 'grab';
         }
       }
     });
@@ -995,14 +1132,27 @@ export class CodeGraphEngine extends React.Component {
       const wasDrag = !!this.drag;
       if (this.drag) { this.drag.fixed = false; this.drag = null; }
       this.pan = null;
-      cv.style.cursor = this.hover ? 'pointer' : 'grab';
+      cv.style.cursor = (this.hover || this.hoverHop) ? 'pointer' : 'grab';
+      this._pressHop = false;
       // Clicks must not reheat the sim — that kept hubs jiggling after every select.
       if (wasDrag) this.kick(0.08);
       else this.kick();
     });
     cv.addEventListener('click', e => {
-      const [x, y] = pos(e), n = this.pick(x, y);
-      this.select(n ? n.id : null);
+      const [x, y] = pos(e);
+      const n = this.pick(x, y);
+      if (n) {
+        this.selectHop(null);
+        this.select(n.id);
+        return;
+      }
+      const hop = this.pickHop(x, y);
+      if (hop) {
+        this.selectHop(hop);
+        return;
+      }
+      this.selectHop(null);
+      this.select(null);
     });
     cv.addEventListener('wheel', e => {
       e.preventDefault();
@@ -1089,8 +1239,9 @@ export class CodeGraphEngine extends React.Component {
       if (!sameCell(a, b)) continue;
       const dx = b.x - a.x, dy = b.y - a.y;
       const d = Math.sqrt(dx * dx + dy * dy) || 1;
-      const rest = (l.kind === 'call' ? 62 : 46) + a.r + b.r;
-      const f = (d - rest) * (l.kind === 'call' ? 0.017 : 0.022) * heat;
+      const typed = hopKindOf(l);
+      const rest = (typed ? 62 : 46) + a.r + b.r;
+      const f = (d - rest) * (typed ? 0.017 : 0.022) * heat;
       const ux = dx / d * f, uy = dy / d * f;
       a.vx += ux; a.vy += uy;
       b.vx -= ux; b.vy -= uy;
@@ -1318,40 +1469,67 @@ export class CodeGraphEngine extends React.Component {
       for (const l of this.links) {
         if (seenLink.has(l)) continue;
         if (l.kind === 'call' && !this.state.showCalls) continue;
+        if (l.kind === 'hop' && this.state.showHops === false) continue;
         if (l.s !== focus && l.t !== focus) continue;
         if (!revealed.has(l.s.id) || !revealed.has(l.t.id)) continue;
         linkList.push(l);
       }
     }
 
+    const hopOn = this.state.showHops !== false;
+    const selHopKey = this.state.selHopKey;
+    const hopLabelLinks = [];
     for (const l of linkList) {
+      const typed = hopKindOf(l);
       const isCall = l.kind === 'call';
-      const on = focus ? (l.s === focus || l.t === focus) : true;
+      const selectedHop = typed && hopKeyOf(l) === selHopKey;
+      const hoverHop = typed && l === this.hoverHop;
+      const nodeOn = !!(focus && (l.s === focus || l.t === focus));
       const dim = q && !(l.s.id.toLowerCase().includes(q) || l.t.id.toLowerCase().includes(q));
-      ctx.globalAlpha = on ? (focus ? 0.9 : isCall ? 0.34 : 0.26) : 0.05;
-      if (dim && !on) ctx.globalAlpha *= 0.3;
-      ctx.strokeStyle = isCall ? INK.call : (on && focus ? l.t.color : INK.edge);
-      ctx.lineWidth = isCall ? Math.min(2.6, 0.7 + l.weight * 0.3) : Math.min(3.2, 0.55 + l.weight * 0.28);
-      ctx.setLineDash(isCall ? [5 / k * k, 4] : []);
+      const c = linkCurve(l);
+      if (typed && hopOn) {
+        // Quiet until a connected file or this hop is the focus — idle 0.72
+        // made every Drizzle/HTTP edge a wall and hid branch colors.
+        if (selectedHop || hoverHop) {
+          ctx.globalAlpha = 1;
+          ctx.lineWidth = (selectedHop ? 3.1 : 2.4) / k;
+        } else if (nodeOn) {
+          ctx.globalAlpha = 0.92;
+          ctx.lineWidth = 2.05 / k;
+        } else if (focus || selHopKey) {
+          ctx.globalAlpha = 0.07;
+          ctx.lineWidth = 0.7 / k;
+        } else {
+          ctx.globalAlpha = 0.14;
+          ctx.lineWidth = 0.75 / k;
+        }
+        ctx.strokeStyle = hopColor(l);
+        ctx.setLineDash(typed === 'http' ? [5 / k * k, 4] : []);
+      } else {
+        const on = focus ? nodeOn : true;
+        ctx.globalAlpha = on ? (focus ? 0.9 : isCall ? 0.34 : hopOn ? 0.12 : 0.26) : 0.05;
+        if (dim && !on) ctx.globalAlpha *= 0.3;
+        ctx.strokeStyle = isCall ? INK.call : (on && focus ? l.t.color : INK.edge);
+        ctx.lineWidth = isCall ? Math.min(2.6, 0.7 + l.weight * 0.3) : Math.min(3.2, 0.55 + l.weight * 0.28);
+        ctx.setLineDash(isCall ? [5 / k * k, 4] : []);
+      }
 
-      const end = l.t.isEndpoint ? socketPort(l.t, l.s.x, l.s.y) : { x: l.t.x, y: l.t.y };
-      const start = l.s.isEndpoint ? socketPort(l.s, l.t.x, l.t.y) : { x: l.s.x, y: l.s.y };
-      const mx = (start.x + end.x) / 2, my = (start.y + end.y) / 2;
-      const dx = end.x - start.x, dy = end.y - start.y;
-      const bow = isCall ? 0.045 : 0.09;
-      const cxp = mx - dy * bow, cyp = my + dx * bow;
       ctx.beginPath();
-      ctx.moveTo(start.x, start.y);
-      ctx.quadraticCurveTo(cxp, cyp, end.x, end.y);
+      ctx.moveTo(c.start.x, c.start.y);
+      ctx.quadraticCurveTo(c.cx, c.cy, c.end.x, c.end.y);
       ctx.stroke();
       ctx.setLineDash([]);
 
-      if (on && focus) {
-        const ang = Math.atan2(end.y - cyp, end.x - cxp);
+      if (typed && hopOn && (selectedHop || hoverHop || nodeOn)) {
+        hopLabelLinks.push({ l, c, selectedHop });
+      }
+
+      if (nodeOn && focus && !typed) {
+        const ang = Math.atan2(c.end.y - c.cy, c.end.x - c.cx);
         ctx.fillStyle = ctx.strokeStyle;
         if (isCall) {
           // a plug prong meeting the socket, rather than an arrowhead
-          const px = end.x - Math.cos(ang) * 1.5, py = end.y - Math.sin(ang) * 1.5;
+          const px = c.end.x - Math.cos(ang) * 1.5, py = c.end.y - Math.sin(ang) * 1.5;
           ctx.lineWidth = 3.4;
           ctx.strokeStyle = INK.call;
           ctx.beginPath();
@@ -1359,8 +1537,9 @@ export class CodeGraphEngine extends React.Component {
           ctx.lineTo(px, py);
           ctx.stroke();
         } else {
+          const dx = c.end.x - c.start.x, dy = c.end.y - c.start.y;
           const d = Math.sqrt(dx * dx + dy * dy) || 1;
-          const ax = end.x - dx / d * (l.t.r + 2), ay = end.y - dy / d * (l.t.r + 2);
+          const ax = c.end.x - dx / d * (l.t.r + 2), ay = c.end.y - dy / d * (l.t.r + 2);
           ctx.beginPath();
           ctx.moveTo(ax, ay);
           ctx.lineTo(ax - Math.cos(ang - 0.4) * 7, ay - Math.sin(ang - 0.4) * 7);
@@ -1369,6 +1548,48 @@ export class CodeGraphEngine extends React.Component {
         }
       }
     }
+
+    const hopLabelCap = 14;
+    const hopRank = (h) => {
+      if (h.selectedHop) return 0;
+      if (h.l === this.hoverHop) return 1;
+      const kind = hopKindOf(h.l);
+      if (kind === 'prisma-write' || kind === 'drizzle-write' || kind === 'job') return 2;
+      if (kind === 'http' || kind === 'call') return 3;
+      return 4;
+    };
+    const drawHopLabels = hopLabelLinks.length > hopLabelCap
+      ? [...hopLabelLinks].sort((a, b) => hopRank(a) - hopRank(b)).slice(0, hopLabelCap)
+      : hopLabelLinks;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const { l, c, selectedHop } of drawHopLabels) {
+      const text = hopLabelOf(l).slice(0, 42);
+      if (!text) continue;
+      const mid = bezierAt(c.start, { x: c.cx, y: c.cy }, c.end, 0.5);
+      const size = Math.max(9, Math.min(12, 10 / k));
+      ctx.font = `${size}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+      const w = ctx.measureText(text).width;
+      const padX = 5 / k, padY = 3.5 / k;
+      ctx.globalAlpha = 0.92;
+      ctx.fillStyle = INK.plate;
+      ctx.beginPath();
+      ctx.roundRect(mid.x - w / 2 - padX, mid.y - size / 2 - padY, w + padX * 2, size + padY * 2, 3 / k);
+      ctx.fill();
+      ctx.strokeStyle = selectedHop ? hopColor(l) : hopColor(l);
+      ctx.lineWidth = (selectedHop ? 1.6 : 1) / k;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = INK.text;
+      ctx.fillText(text, mid.x, mid.y);
+      const gitTag = l.s.gitStatus === 'A' ? 'new' : l.s.gitChanged ? 'edited' : '';
+      if (gitTag && selectedHop) {
+        ctx.font = `${Math.max(8, 9 / k)}px Inter, ui-sans-serif, system-ui, sans-serif`;
+        ctx.fillStyle = GIT.add;
+        ctx.fillText(gitTag, mid.x, mid.y + size / 2 + 8 / k);
+      }
+    }
+    ctx.textBaseline = 'alphabetic';
 
     const labels = [];
     const hlGit = this.state.highlightGit;
@@ -1488,6 +1709,21 @@ export class CodeGraphEngine extends React.Component {
       }
       ctx.restore();
     }
+    this.positionHopCard();
+  }
+
+  positionHopCard() {
+    const el = this.hopCardRef?.current;
+    if (!el) return;
+    const hopLink = (this.activeLinks || this.links || []).find((l) => hopKeyOf(l) === this.state.selHopKey);
+    if (!hopLink || hopLink.off || !hopLink.s || !hopLink.t) return;
+    const c = linkCurve(hopLink);
+    const mid = bezierAt(c.start, { x: c.cx, y: c.cy }, c.end, 0.5);
+    const sc = this.worldToScreen(mid.x, mid.y);
+    const x = Math.min((this.w || 800) - 312, Math.max(8, sc.x + 14));
+    const y = Math.min((this.h || 600) - 80, Math.max(8, sc.y + 16));
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
   }
 
   renderVals() {
@@ -1563,6 +1799,28 @@ export class CodeGraphEngine extends React.Component {
       this.setState({ query }, () => this.kick());
       this.props.onQueryChange?.(query);
     };
+    let hopCard = null;
+    const hopLink = (this.activeLinks || this.links || []).find((l) => hopKeyOf(l) === this.state.selHopKey);
+    if (hopLink && !hopLink.off && hopLink.s && hopLink.t) {
+      const c = linkCurve(hopLink);
+      const mid = bezierAt(c.start, { x: c.cx, y: c.cy }, c.end, 0.5);
+      const sc = this.worldToScreen(mid.x, mid.y);
+      const kind = hopKindOf(hopLink);
+      hopCard = {
+        x: Math.min((this.w || 800) - 312, Math.max(8, sc.x + 14)),
+        y: Math.min((this.h || 600) - 80, Math.max(8, sc.y + 16)),
+        kind,
+        kindLabel: HOP_KIND_LABEL[kind] || kind,
+        color: hopColor(hopLink),
+        label: hopLabelOf(hopLink),
+        change: hopLink.s.gitStatus === 'A' ? 'new' : hopLink.s.gitChanged ? 'edited' : null,
+        fields: hopLink.fields || [],
+        protected: hopLink.protected || [],
+        urls: kind === 'http' ? [] : (hopLink.urls || []),
+        from: hopLink.s.label,
+        to: hopLink.t.label,
+      };
+    }
     return {
       canvasRef: this.canvasRef,
       legendRef: this.legendRef,
@@ -1594,6 +1852,17 @@ export class CodeGraphEngine extends React.Component {
       callsBorder: this.state.showCalls ? 'var(--color-accent-700)' : 'var(--color-neutral-800)',
       callsColor: this.state.showCalls ? 'var(--color-accent-300)' : 'var(--color-neutral-500)',
       toggleCalls: () => this.setState({ showCalls: !this.state.showCalls }, () => this.applyFilter()),
+      hopsOn: this.state.showHops !== false,
+      hopsLabel: this.state.showHops !== false ? 'Typed hops on' : 'Typed hops off',
+      hopsBorder: this.state.showHops !== false ? 'var(--color-accent-700)' : 'var(--color-neutral-800)',
+      hopsColor: this.state.showHops !== false ? 'var(--color-accent-300)' : 'var(--color-neutral-500)',
+      toggleHops: () => this.setState((st) => ({ showHops: st.showHops === false }), () => {
+        if (this.state.showHops === false) this.selectHop(null);
+        this.applyFilter();
+      }),
+      hopCard,
+      hopCardRef: this.hopCardRef,
+      clearHop: () => this.selectHop(null),
       highlightGit: this.state.highlightGit,
       onlyGit: this.state.onlyGit,
       gitSummary: this.state.gitSummary,
