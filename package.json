@@ -25,7 +25,8 @@
     "analyze": "node tools/extract-graph.mjs",
     "start": "node server/index.mjs",
     "serve": "node cli.mjs serve",
-    "build": "vite build"
+    "build": "vite build",
+    "test": "node --test tools/*.test.mjs client/src/*.test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.5.2",

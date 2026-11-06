@@ -1,4 +1,14 @@
 import React from 'react';
+import {
+  computeFocusView,
+  decodeFocusQuery,
+  defaultHops,
+  encodeFocusQuery,
+  focusStateJson,
+  formatShaPill,
+  isTestPath,
+  shortDirLabel,
+} from './focusView.js';
 
 
 const asset = (_id, fallback) => fallback;
@@ -367,6 +377,9 @@ export class CodeGraphEngine extends React.Component {
     branchInput: '', compareInput: '',
     stats: '', repoName: '',
     gitSummary: '', gitHeadLabel: '', gitBaseLabel: '', gitPr: null, gitBaseNote: '', gitBaseSource: '',
+    focusOn: false, focusSeedMode: 'changed', focusSeeds: [], focusHops: 1, focusDir: 'both',
+    focusPins: [], focusHideTests: true, focusBase: '', focusQuery: '', focusPick: null,
+    focusHopsTouched: false, focusCopied: '', focusSummary: '',
     gitStale: false, gitMissing: 0, gitSourcesNewer: 0, gitStaleReason: null, gitFileCount: 0,
   };
 
@@ -380,6 +393,23 @@ export class CodeGraphEngine extends React.Component {
     this.hover = null; this.hoverHop = null; this.drag = null; this.pan = null;
     this.alpha = 1;
     if (p.initialOnlyGit) this.state = { ...this.state, onlyGit: true };
+    if (p.active !== false && typeof window !== 'undefined') {
+      const fromUrl = decodeFocusQuery(window.location.search);
+      if (fromUrl.on) {
+        this.state = {
+          ...this.state,
+          focusOn: true,
+          focusSeedMode: fromUrl.seedMode,
+          focusSeeds: fromUrl.seeds,
+          focusHops: fromUrl.hops,
+          focusDir: fromUrl.direction,
+          focusPins: fromUrl.pins,
+          focusHideTests: fromUrl.hideTests,
+          focusBase: fromUrl.base,
+          focusHopsTouched: true,
+        };
+      }
+    }
   }
 
   componentDidMount() {
@@ -406,6 +436,9 @@ export class CodeGraphEngine extends React.Component {
     }
     if (this.props.active !== false) this.resumeEngine();
     else this.pauseEngine();
+    if (this.state.focusOn && this.state.focusBase && this.props.onCompareBase) {
+      this.props.onCompareBase(this.state.focusBase);
+    }
   }
 
   pauseEngine() {
@@ -464,7 +497,10 @@ export class CodeGraphEngine extends React.Component {
   componentDidUpdate(prev) {
     if (prev.active !== this.props.active) {
       if (this.props.active === false) this.pauseEngine();
-      else this.resumeEngine();
+      else {
+        this.resumeEngine();
+        this.writeFocusUrl();
+      }
     }
     if (this.props.query !== undefined && this.props.query !== prev.query && this.props.query !== this.state.query) {
       this.setState({ query: this.props.query }, () => this.kick());
@@ -636,7 +672,7 @@ export class CodeGraphEngine extends React.Component {
       seenLink.add(l);
       linkList.push(l);
     }
-    if (focus?.gitChanged) {
+    if (focus?.gitChanged && !this.state.focusOn) {
       for (const l of this.links || []) {
         if (seenLink.has(l)) continue;
         if (l.kind === 'call' && !this.state.showCalls) continue;
@@ -890,6 +926,8 @@ export class CodeGraphEngine extends React.Component {
       gitSummary,
       gitHeadLabel: branches.join(', '),
       gitBaseLabel: baseLabel,
+      gitHeadShort: gitInfo?.headShort || '',
+      gitBaseShort: gitInfo?.baseShort || '',
       gitPr: gitInfo?.pr || null,
       gitBaseNote: gitInfo?.baseNote || '',
       gitBaseSource: gitInfo?.baseSource || '',
@@ -1030,6 +1068,8 @@ export class CodeGraphEngine extends React.Component {
     this.cells = null; this.frames = null;
     this.active = this.nodes.filter(n => !n.off);
     this.activeLinks = this.links.filter(l => !l.off);
+    if (this.state.focusOn) this.applyFocusOverlay();
+    else this.clearFocusMarks();
     this.kick(0.5);
   }
 
@@ -1503,7 +1543,7 @@ export class CodeGraphEngine extends React.Component {
     // Hovering/selecting a changed file reveals its real connections (even when
     // "changed only" has filtered them out) and labels them. Branch-highlights
     // keep those extra wires faint so the diff edges stay readable.
-    const revealGit = !!(focus && focus.gitChanged);
+    const revealGit = !!(focus && focus.gitChanged) && !this.state.focusOn;
     const revealed = new Set();
     if (revealGit) {
       revealed.add(focus.id);
@@ -1559,6 +1599,11 @@ export class CodeGraphEngine extends React.Component {
         }
         ctx.strokeStyle = hopColor(l);
         ctx.setLineDash(typed === 'http' ? [5 / k * k, 4] : []);
+      } else if (this.state.focusOn) {
+        ctx.globalAlpha = 0.92;
+        ctx.strokeStyle = INK.call;
+        ctx.lineWidth = 1.45;
+        ctx.setLineDash([]);
       } else {
         const on = focus ? nodeOn : true;
         if (contextEdge) {
@@ -1584,8 +1629,9 @@ export class CodeGraphEngine extends React.Component {
         hopLabelLinks.push({ l, c, selectedHop });
       }
 
-      if (nodeOn && focus && !typed && !contextEdge) {
+      if ((this.state.focusOn && !typed) || (nodeOn && focus && !typed && !contextEdge)) {
         const ang = Math.atan2(c.end.y - c.cy, c.end.x - c.cx);
+        ctx.globalAlpha = this.state.focusOn ? 0.95 : ctx.globalAlpha;
         ctx.fillStyle = ctx.strokeStyle;
         if (isCall) {
           // a plug prong meeting the socket, rather than an arrowhead
@@ -1600,10 +1646,11 @@ export class CodeGraphEngine extends React.Component {
           const dx = c.end.x - c.start.x, dy = c.end.y - c.start.y;
           const d = Math.sqrt(dx * dx + dy * dy) || 1;
           const ax = c.end.x - dx / d * (l.t.r + 2), ay = c.end.y - dy / d * (l.t.r + 2);
+          const head = this.state.focusOn ? Math.max(9, 11 / k) : 7;
           ctx.beginPath();
           ctx.moveTo(ax, ay);
-          ctx.lineTo(ax - Math.cos(ang - 0.4) * 7, ay - Math.sin(ang - 0.4) * 7);
-          ctx.lineTo(ax - Math.cos(ang + 0.4) * 7, ay - Math.sin(ang + 0.4) * 7);
+          ctx.lineTo(ax - Math.cos(ang - 0.42) * head, ay - Math.sin(ang - 0.42) * head);
+          ctx.lineTo(ax - Math.cos(ang + 0.42) * head, ay - Math.sin(ang + 0.42) * head);
           ctx.closePath(); ctx.fill();
         }
       }
@@ -1653,6 +1700,9 @@ export class CodeGraphEngine extends React.Component {
 
     const labels = [];
     const hlGit = this.state.highlightGit;
+    const focusMode = this.state.focusOn;
+    // In focus, hop distance owns opacity. Changed files stay green fill/ring.
+    const showGit = hlGit || focusMode;
     const drawNodes = [];
     const seenNode = new Set();
     for (const n of (this.active || this.nodes)) {
@@ -1670,43 +1720,58 @@ export class CodeGraphEngine extends React.Component {
       const match = !q || n.id.toLowerCase().includes(q);
       const on = !focus || near.has(n.id);
       const peek = revealGit && revealed.has(n.id);
-      let alpha = (on ? 1 : 0.16) * (match ? 1 : 0.2);
+      let alpha = focusMode
+        ? (n.focusOpacity ?? 1) * (match ? 1 : 0.25)
+        : (on ? 1 : 0.16) * (match ? 1 : 0.2);
       // With branch colors on, mute unchanged so folder greens never look like adds —
       // unless this neighbor was just revealed by hovering a changed file.
-      if (hlGit && !n.gitChanged && !peek) alpha *= 0.28;
-      if (hlGit && n.gitStatus === 'D') alpha *= 0.85;
-      const folderFill = (hlGit && !n.gitChanged && !peek) ? muteFolderColor(n.color) : n.color;
+      // Focus mode does not use that dimming — opacity is hop distance only.
+      if (!focusMode && hlGit && !n.gitChanged && !peek) alpha *= 0.28;
+      if (!focusMode && hlGit && n.gitStatus === 'D') alpha *= 0.85;
+      const folderFill = (!focusMode && hlGit && !n.gitChanged && !peek) ? muteFolderColor(n.color) : n.color;
+      if (focusMode) {
+        ctx.globalAlpha = Math.min(0.55, alpha) * 0.7;
+        ctx.fillStyle = '#9184d9';
+        ctx.beginPath();
+        if (n.isEndpoint) {
+          const b = socketBox(n);
+          ctx.roundRect(b.x0 - 5, b.y0 - 5, b.w + 10, b.h + 10, 6);
+        } else {
+          ctx.arc(n.x, n.y, n.r + 7, 0, 6.2832);
+        }
+        ctx.fill();
+      }
       if (n.isEndpoint) {
-        const gitFill = hlGit && n.gitStatus === 'A' ? GIT.add
-          : hlGit && n.gitStatus === 'D' ? GIT.del
-          : (hlGit && !n.gitChanged && !peek ? folderFill : null);
+        const gitFill = showGit && n.gitStatus === 'A' ? GIT.add
+          : showGit && n.gitStatus === 'D' ? GIT.del
+          : (!focusMode && hlGit && !n.gitChanged && !peek ? folderFill : null);
         const emph = (n === sel || n === labeled) ? INK.text
-          : (hlGit && n.gitStatus === 'M') ? GIT.edit
-          : (hlGit && n.gitStatus === 'A') ? '#12c45a'
-          : (hlGit && n.gitStatus === 'D') ? '#ff8a95'
+          : (showGit && n.gitStatus === 'M') ? GIT.edit
+          : (showGit && n.gitStatus === 'A') ? '#12c45a'
+          : (showGit && n.gitStatus === 'D') ? '#ff8a95'
           : (peek && !n.gitChanged ? INK.text : null)
           || (q && match && q.length > 1 ? INK.text : null);
-        drawSocket(ctx, n, k, alpha, emph, gitFill, hlGit && n.gitStatus === 'D');
+        drawSocket(ctx, n, k, alpha, emph, gitFill, showGit && n.gitStatus === 'D');
       } else {
         ctx.globalAlpha = alpha;
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r, 0, 6.2832);
         // Added = neon green fill; deleted = red; edited keep (unmuted) folder color + ring.
-        if (hlGit && n.gitStatus === 'A') ctx.fillStyle = GIT.add;
-        else if (hlGit && n.gitStatus === 'D') ctx.fillStyle = GIT.del;
+        if (showGit && n.gitStatus === 'A') ctx.fillStyle = GIT.add;
+        else if (showGit && n.gitStatus === 'D') ctx.fillStyle = GIT.del;
         else ctx.fillStyle = folderFill;
         ctx.fill();
         if (n === sel || n === labeled) {
           ctx.lineWidth = 2.5 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.95; ctx.stroke();
         } else if (peek && !n.gitChanged) {
           ctx.lineWidth = 1.6 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.85; ctx.stroke();
-        } else if (hlGit && n.gitStatus === 'M') {
-          // Edited = bright green ring
-          ctx.lineWidth = 2.4 / k; ctx.strokeStyle = GIT.edit; ctx.globalAlpha = 1; ctx.stroke();
-        } else if (hlGit && n.gitStatus === 'A') {
-          ctx.lineWidth = 1.6 / k; ctx.strokeStyle = '#12c45a'; ctx.globalAlpha = 0.95; ctx.stroke();
-        } else if (hlGit && n.gitStatus === 'D') {
-          ctx.lineWidth = 1.8 / k; ctx.strokeStyle = '#ff8a95'; ctx.globalAlpha = 0.95;
+        } else if (showGit && n.gitStatus === 'M') {
+          // Edited = bright green ring. Focus keeps hop opacity; the color is the status.
+          ctx.lineWidth = 2.4 / k; ctx.strokeStyle = GIT.edit; ctx.globalAlpha = focusMode ? alpha : 1; ctx.stroke();
+        } else if (showGit && n.gitStatus === 'A') {
+          ctx.lineWidth = 1.6 / k; ctx.strokeStyle = '#12c45a'; ctx.globalAlpha = focusMode ? alpha : 0.95; ctx.stroke();
+        } else if (showGit && n.gitStatus === 'D') {
+          ctx.lineWidth = 1.8 / k; ctx.strokeStyle = '#ff8a95'; ctx.globalAlpha = focusMode ? alpha : 0.95;
           ctx.setLineDash([3 / k, 2.5 / k]); ctx.stroke(); ctx.setLineDash([]);
         } else if (q && match && q.length > 1) {
           ctx.lineWidth = 1.5 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.8; ctx.stroke();
@@ -1716,10 +1781,16 @@ export class CodeGraphEngine extends React.Component {
       // Revealed neighbors of a changed file all get names while hovered.
       const primary = labeled && n === labeled;
       const searchHit = q && q.length > 1 && match;
-      const gitHit = hlGit && n.gitChanged && (this.state.onlyGit || !q);
+      const gitHit = !focusMode && hlGit && n.gitChanged && (this.state.onlyGit || !q);
       const revealHit = peek && n !== focus;
-      if (primary || searchHit || gitHit || revealHit) {
-        labels.push({ n, on, primary, searchHit: searchHit || gitHit || revealHit });
+      const focusKeep = focusMode && (n.focusRole === 'seed' || n.focusPinned);
+      if (focusMode || primary || searchHit || gitHit || revealHit) {
+        labels.push({
+          n,
+          on: focusMode ? true : on,
+          primary: primary || focusKeep,
+          searchHit: searchHit || gitHit || revealHit,
+        });
       }
     }
 
@@ -1731,7 +1802,8 @@ export class CodeGraphEngine extends React.Component {
       const n = L.n;
       const size = Math.max(9, Math.min(13, 9.5 + n.r * 0.22)) / k;
       ctx.font = `${size}px Inter, ui-sans-serif, system-ui, sans-serif`;
-      const w = ctx.measureText(n.label).width;
+      const text = (this.state.focusOn && n.focusLabel) ? n.focusLabel : n.label;
+      const w = ctx.measureText(text).width;
       const top = n.isEndpoint ? socketBox(n).y0 : n.y - n.r;
       const y = top - 5 / k;
       const box = { x0: n.x - w / 2 - 3 / k, x1: n.x + w / 2 + 3 / k, y0: y - size, y1: y + 3 / k };
@@ -1750,7 +1822,33 @@ export class CodeGraphEngine extends React.Component {
       ctx.fill();
       ctx.globalAlpha = L.on ? 0.94 : 0.15;
       ctx.fillStyle = n.isEndpoint && !L.on ? INK.call : INK.text;
-      ctx.fillText(n.label, n.x, y);
+      ctx.fillText(text, n.x, y);
+    }
+    if (this.state.focusOn) {
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      for (const n of drawNodes) {
+        if (!n.focusBadge) continue;
+        const text = n.focusBadge === 'touched' ? '⚠️ touched' : '✅ untouched';
+        const size = 11 / k;
+        ctx.font = `${size}px Inter, ui-sans-serif, system-ui, sans-serif`;
+        const w = ctx.measureText(text).width;
+        const x = n.x + (n.isEndpoint ? socketBox(n).w / 2 : n.r) + 8 / k;
+        const y = n.y;
+        const padX = 4 / k;
+        const padY = 3 / k;
+        ctx.globalAlpha = 0.96;
+        ctx.fillStyle = INK.plate;
+        ctx.beginPath();
+        ctx.roundRect(x - padX, y - size / 2 - padY, w + padX * 2, size + padY * 2, 4 / k);
+        ctx.fill();
+        ctx.strokeStyle = n.focusBadge === 'touched' ? '#e6c07b' : GIT.add;
+        ctx.lineWidth = 1 / k;
+        ctx.stroke();
+        ctx.fillStyle = n.focusBadge === 'touched' ? '#e6c07b' : '#d7ffe8';
+        ctx.fillText(text, x, y);
+      }
+      ctx.textBaseline = 'alphabetic';
     }
     ctx.restore();
 
@@ -1784,6 +1882,258 @@ export class CodeGraphEngine extends React.Component {
     const y = Math.min((this.h || 600) - 80, Math.max(8, sc.y + 16));
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
+  }
+
+  focusGraph() {
+    return {
+      nodes: (this.nodes || []).map((n) => ({ id: n.id })),
+      links: (this.links || [])
+        .filter((l) => l.s && l.t && (!l.kind || l.kind === 'import'))
+        .map((l) => ({ source: l.s.id, target: l.t.id })),
+    };
+  }
+
+  focusInput() {
+    const git = this.props.gitInfo || {};
+    const changed = (this.nodes || [])
+      .filter((n) => n.gitChanged)
+      .map((n) => ({ id: n.id, status: n.gitStatus || 'M' }));
+    return {
+      on: true,
+      seedMode: this.state.focusSeedMode,
+      seeds: this.state.focusSeeds,
+      hops: this.state.focusHops,
+      direction: this.state.focusDir,
+      pins: this.state.focusPins,
+      hideTests: this.state.focusHideTests,
+      base: this.state.gitBaseLabel || this.state.focusBase || '',
+      changed,
+      head: git.headSha || git.packages?.[0]?.head || '',
+      baseSha: git.baseSha || git.packages?.[0]?.baseSha || '',
+    };
+  }
+
+  clearFocusMarks() {
+    for (const n of this.nodes || []) {
+      n.focusOff = false;
+      n.focusOpacity = null;
+      n.focusBadge = null;
+      n.focusLabel = null;
+      n.focusPinned = false;
+      n.focusHop = null;
+      n.focusRole = null;
+    }
+    this._focusView = null;
+    if (this.state.focusSummary) this.setState({ focusSummary: '' });
+  }
+
+  snapshotFocusPositions() {
+    if (this._preFocusPos || !this.nodes?.length) return;
+    this._preFocusPos = this.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y }));
+  }
+
+  restoreFocusPositions() {
+    if (!this._preFocusPos) return;
+    const by = new Map(this._preFocusPos.map((p) => [p.id, p]));
+    for (const n of this.nodes || []) {
+      const p = by.get(n.id);
+      if (!p) continue;
+      n.x = p.x;
+      n.y = p.y;
+      n.vx = 0;
+      n.vy = 0;
+    }
+    this._preFocusPos = null;
+    this._focusSig = null;
+  }
+
+  applyFocusOverlay() {
+    if (!this.state.focusOn || !this.nodes?.length) return;
+    this.snapshotFocusPositions();
+    const view = computeFocusView(this.focusGraph(), this.focusInput());
+    this._focusView = view;
+    const byId = new Map(view.nodes.map((n) => [n.id, n]));
+    for (const n of this.nodes) {
+      const info = byId.get(n.id);
+      if (!info) {
+        n.focusOff = true;
+        n.focusBadge = null;
+        n.focusPinned = false;
+        n.focusLabel = null;
+        n.focusHop = null;
+        n.focusRole = null;
+        continue;
+      }
+      n.focusOff = false;
+      n.focusHop = info.hop;
+      n.focusOpacity = info.opacity;
+      n.focusBadge = info.badge;
+      n.focusLabel = info.label;
+      n.focusRole = info.role;
+      n.focusPinned = !!info.pinned;
+    }
+    const visible = new Set(view.nodes.map((n) => n.id));
+    const edgeSet = new Set(view.edges.map((e) => `${e.source}\0${e.target}`));
+    this.active = this.nodes.filter((n) => visible.has(n.id));
+    this.activeLinks = (this.links || []).filter((l) => {
+      if (!l.s || !l.t) return false;
+      if (l.kind && l.kind !== 'import') return false;
+      return edgeSet.has(`${l.s.id}\0${l.t.id}`);
+    });
+    this.cells = null;
+    this.frames = null;
+    const sig = `${view.summary}|${view.direction}|${view.nodes.map((n) => n.id).join('|')}`;
+    if (sig !== this._focusSig) {
+      this._focusSig = sig;
+      this.queueFit({ all: true });
+    }
+    const patch = {};
+    if (view.summary !== this.state.focusSummary) patch.focusSummary = view.summary;
+    if (this.state.selId && !visible.has(this.state.selId)) {
+      patch.selId = null;
+      patch.selHopKey = null;
+      patch.code = null;
+      patch.codeDiff = null;
+    }
+    if (Object.keys(patch).length) this.setState(patch);
+  }
+
+  writeFocusUrl() {
+    if (this.props.active === false || typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    for (const key of ['focus', 'seedMode', 'seeds', 'hops', 'dir', 'pins', 'hideTests', 'base']) {
+      params.delete(key);
+    }
+    if (this.state.focusOn) {
+      const extra = new URLSearchParams(encodeFocusQuery({
+        on: true,
+        seedMode: this.state.focusSeedMode,
+        seeds: this.state.focusSeeds,
+        hops: this.state.focusHops,
+        direction: this.state.focusDir,
+        pins: this.state.focusPins,
+        hideTests: this.state.focusHideTests,
+        base: this.state.gitBaseLabel || this.state.focusBase || '',
+      }));
+      for (const [key, value] of extra) params.set(key, value);
+    }
+    const qs = params.toString();
+    const next = `${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`;
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (next !== current) window.history.replaceState(null, '', next);
+  }
+
+  patchFocus(partial, { heat = 0.55 } = {}) {
+    this.setState(partial, () => {
+      this.applyFilter();
+      this.writeFocusUrl();
+      this.queueFit({ all: true });
+      this.kick(this.state.focusOn ? heat : 0.02);
+    });
+  }
+
+  toggleFocus() {
+    const next = !this.state.focusOn;
+    if (!next) this.restoreFocusPositions();
+    const patch = { focusOn: next, focusPick: null, focusQuery: '' };
+    if (next && !this.state.focusHopsTouched) patch.focusHops = defaultHops(this.state.focusSeedMode);
+    this.patchFocus(patch, { heat: next ? 0.7 : 0.02 });
+  }
+
+  useChangedSeeds() {
+    const patch = { focusSeedMode: 'changed', focusPick: null };
+    if (!this.state.focusHopsTouched) patch.focusHops = defaultHops('changed');
+    this.patchFocus(patch);
+  }
+
+  usePickedSeeds() {
+    if (this.state.focusSeeds.length < 2) return;
+    const patch = { focusSeedMode: 'picked' };
+    if (!this.state.focusHopsTouched) patch.focusHops = defaultHops('picked');
+    this.patchFocus(patch);
+  }
+
+  addFocusSeed(id) {
+    if (!id || this.state.focusSeeds.includes(id) || this.state.focusSeeds.length >= 4) return;
+    const seeds = [...this.state.focusSeeds, id];
+    const patch = { focusSeeds: seeds, focusQuery: '' };
+    if (seeds.length >= 2) {
+      patch.focusSeedMode = 'picked';
+      patch.focusPick = null;
+      if (!this.state.focusHopsTouched && this.state.focusSeedMode !== 'picked') patch.focusHops = defaultHops('picked');
+    } else {
+      patch.focusPick = 'seed';
+    }
+    this.patchFocus(patch);
+  }
+
+  removeFocusSeed(id) {
+    const seeds = this.state.focusSeeds.filter((seed) => seed !== id);
+    const patch = { focusSeeds: seeds };
+    if (seeds.length < 2) {
+      patch.focusSeedMode = 'changed';
+      if (!this.state.focusHopsTouched) patch.focusHops = defaultHops('changed');
+    }
+    this.patchFocus(patch);
+  }
+
+  addFocusPin(id) {
+    if (!id || this.state.focusPins.includes(id) || this.state.focusPins.length >= 8) return;
+    this.patchFocus({ focusPins: [...this.state.focusPins, id], focusQuery: '', focusPick: null });
+  }
+
+  removeFocusPin(id) {
+    this.patchFocus({ focusPins: this.state.focusPins.filter((pin) => pin !== id) });
+  }
+
+  setFocusHops(hops) {
+    this.patchFocus({ focusHops: hops, focusHopsTouched: true });
+  }
+
+  setFocusDir(direction) {
+    this.patchFocus({ focusDir: direction });
+  }
+
+  focusMatches() {
+    const q = (this.state.focusQuery || '').trim().toLowerCase();
+    if (!q || !this.state.focusPick) return [];
+    const chosen = new Set(this.state.focusPick === 'pin' ? this.state.focusPins : this.state.focusSeeds);
+    const out = [];
+    for (const n of this.nodes || []) {
+      if (chosen.has(n.id)) continue;
+      if (this.state.focusPick === 'seed' && this.state.focusSeeds.length >= 4) break;
+      const label = `${n.label || ''} ${n.name || ''} ${n.id}`.toLowerCase();
+      if (!label.includes(q)) continue;
+      out.push(n);
+      if (out.length >= 8) break;
+    }
+    return out;
+  }
+
+  copyFocusJson() {
+    const payload = this._focusView
+      ? JSON.stringify(this._focusView.state, null, 2)
+      : focusStateJson(this.focusInput());
+    const done = () => {
+      this.setState({ focusCopied: 'Copied' });
+      clearTimeout(this._copyTimer);
+      this._copyTimer = setTimeout(() => {
+        if (!this._dead) this.setState({ focusCopied: '' });
+      }, 1400);
+    };
+    const fallback = () => {
+      const el = document.createElement('textarea');
+      el.value = payload;
+      el.setAttribute('readonly', '');
+      el.style.position = 'fixed';
+      el.style.left = '-9999px';
+      document.body.appendChild(el);
+      el.select();
+      try { document.execCommand('copy'); } catch { /* ignore */ }
+      el.remove();
+    };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(payload).then(done).catch(() => { fallback(); done(); });
+    else { fallback(); done(); }
   }
 
   renderVals() {
@@ -1980,6 +2330,61 @@ export class CodeGraphEngine extends React.Component {
         });
       },
       refit: () => this.queueFit({ all: true }),
+      focusOn: this.state.focusOn,
+      focusSeedMode: this.state.focusSeedMode,
+      focusSeeds: this.state.focusSeeds,
+      focusHops: this.state.focusHops,
+      focusDir: this.state.focusDir,
+      focusPins: this.state.focusPins,
+      focusHideTests: this.state.focusHideTests,
+      focusQuery: this.state.focusQuery || '',
+      focusPick: this.state.focusPick,
+      focusCopied: this.state.focusCopied || '',
+      focusSummary: this.state.focusSummary || this._focusView?.summary || '',
+      focusShaPill: formatShaPill(this.props.gitInfo?.baseSha, this.props.gitInfo?.headSha),
+      focusSeedChips: (() => {
+        const ids = this.state.focusSeedMode === 'picked'
+          ? this.state.focusSeeds
+          : (this.nodes || []).filter((n) => n.gitChanged && !(this.state.focusHideTests && isTestPath(n.id))).map((n) => n.id);
+        return ids.slice(0, 4).map((id) => ({
+          id,
+          label: shortDirLabel(id),
+          removable: this.state.focusSeedMode === 'picked',
+        }));
+      })(),
+      focusSeedMore: Math.max(0, (this.state.focusSeedMode === 'picked'
+        ? this.state.focusSeeds.length
+        : (this.nodes || []).filter((n) => n.gitChanged && !(this.state.focusHideTests && isTestPath(n.id))).length) - 4),
+      focusPinChips: this.state.focusPins.map((id) => ({
+        id,
+        label: shortDirLabel(id),
+        badge: this.byId?.[id]?.gitChanged ? 'touched' : 'untouched',
+      })),
+      focusMatches: this.focusMatches().map((n) => ({
+        id: n.id,
+        label: shortDirLabel(n.id),
+      })),
+      toggleFocus: () => this.toggleFocus(),
+      clearFocus: () => { if (this.state.focusOn) this.toggleFocus(); },
+      useChangedSeeds: () => this.useChangedSeeds(),
+      usePickedSeeds: () => this.usePickedSeeds(),
+      addFocusSeed: (id) => this.addFocusSeed(id),
+      removeFocusSeed: (id) => this.removeFocusSeed(id),
+      addFocusPin: (id) => this.addFocusPin(id),
+      removeFocusPin: (id) => this.removeFocusPin(id),
+      setFocusHops: (hops) => this.setFocusHops(hops),
+      setFocusDir: (dir) => this.setFocusDir(dir),
+      toggleFocusTests: () => this.patchFocus({ focusHideTests: !this.state.focusHideTests }),
+      openFocusPick: (which) => this.setState({
+        focusPick: this.state.focusPick === which ? null : which,
+        focusQuery: '',
+      }),
+      onFocusQuery: (e) => this.setState({ focusQuery: e.target.value }),
+      pickFocusMatch: (id) => {
+        if (this.state.focusPick === 'pin') this.addFocusPin(id);
+        else this.addFocusSeed(id);
+      },
+      copyFocusJson: () => this.copyFocusJson(),
       groups: gs ? gs.keys.map(k => ({
         id: k, label: gs.label(k), color: gs.colorOf(k), count: counts[k] || 0,
         bg: this.state.query === k ? 'var(--color-accent-800)' : 'transparent',
