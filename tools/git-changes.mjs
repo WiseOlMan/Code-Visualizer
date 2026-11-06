@@ -39,7 +39,38 @@ export function gitBranch(cwd) {
 }
 
 function revExists(cwd, rev) {
-  return !!git(cwd, ['rev-parse', '--verify', rev]);
+  return !!git(cwd, ['rev-parse', '--verify', '--end-of-options', rev]);
+}
+
+const SAFE_REV = /^(?:[\w.-]+)(?:\/[\w.-]+)*$/;
+
+/** Branch or commit-ish safe to pass as a git argv (no ranges, flags, or rev syntax). */
+export function isSafeRev(name) {
+  return typeof name === 'string' && SAFE_REV.test(name) && !name.includes('..') && !name.startsWith('-');
+}
+
+/**
+ * A rev git can actually resolve. Prefers the local branch, then origin/<name>,
+ * so a PR base that was fetched but not checked out still diffs.
+ */
+export function resolveRev(cwd, name) {
+  if (!isSafeRev(name)) return null;
+  if (revExists(cwd, name)) return name;
+  if (!name.startsWith('origin/')) {
+    const remote = `origin/${name}`;
+    if (isSafeRev(remote) && revExists(cwd, remote)) return remote;
+  }
+  return null;
+}
+
+function shortBase(name) {
+  if (!name) return null;
+  return name.startsWith('origin/') ? name.slice('origin/'.length) : name;
+}
+
+export function gitRemoteUrl(cwd, remote = 'origin') {
+  if (!isSafeRev(remote)) return null;
+  return git(cwd, ['remote', 'get-url', remote]);
 }
 
 /** Prefer main → master → develop → upstream default. */
@@ -84,11 +115,12 @@ function parseNameStatus(text) {
 }
 
 function diffAgainstBase(cwd, base) {
-  if (!base) return [];
+  const rev = resolveRev(cwd, base);
+  if (!rev) return [];
   // Three-dot: changes on this branch since merge-base with base.
-  const ranged = git(cwd, ['diff', '--name-status', `${base}...HEAD`]);
+  const ranged = git(cwd, ['diff', '--name-status', `${rev}...HEAD`]);
   if (ranged != null) return parseNameStatus(ranged);
-  const two = git(cwd, ['diff', '--name-status', base, 'HEAD']);
+  const two = git(cwd, ['diff', '--name-status', rev, 'HEAD']);
   return parseNameStatus(two || '');
 }
 
@@ -121,8 +153,11 @@ export function collectGitChanges(packages, opts = {}) {
     if (!pkg?.root || !isGitRepo(pkg.root)) continue;
     const branch = gitBranch(pkg.root);
     const head = gitHead(pkg.root);
-    const base = opts.base || resolveBaseBranch(pkg.root);
-    const committed = base && branch && base !== branch ? diffAgainstBase(pkg.root, base) : [];
+    const requested = opts.base || resolveBaseBranch(pkg.root);
+    const rev = resolveRev(pkg.root, requested);
+    // Show the branch name (`feat/auth-layer`), even when the rev used is origin/…
+    const base = shortBase(rev || requested);
+    const committed = rev && branch && base !== branch ? diffAgainstBase(pkg.root, requested) : [];
     // Always include uncommitted so WIP shows even on main
     const dirty = uncommitted(pkg.root);
     const byPath = new Map();
@@ -229,7 +264,9 @@ function fileTracked(cwd, relPath) {
  */
 export function fileDiff(cwd, relPath, opts = {}) {
   if (!cwd || !relPath || !isGitRepo(cwd)) return null;
-  const base = opts.base || resolveBaseBranch(cwd);
+  const requested = opts.base || resolveBaseBranch(cwd);
+  const rev = resolveRev(cwd, requested) || resolveRev(cwd, resolveBaseBranch(cwd));
+  const base = shortBase(rev);
   const abs = path.join(cwd, relPath);
   const exists = fs.existsSync(abs) && fs.statSync(abs).isFile();
   const tracked = fileTracked(cwd, relPath);
@@ -246,8 +283,8 @@ export function fileDiff(cwd, relPath, opts = {}) {
 
   // Prefer full change vs base (branch commits + working tree). Fall back to HEAD.
   let diffText = null;
-  if (base) {
-    diffText = git(cwd, ['diff', '-U9999', '--no-color', `${base}`, '--', relPath]);
+  if (rev) {
+    diffText = git(cwd, ['diff', '-U9999', '--no-color', rev, '--', relPath]);
   }
   if (diffText == null || diffText === '') {
     const againstHead = git(cwd, ['diff', '-U9999', '--no-color', 'HEAD', '--', relPath]);
@@ -256,7 +293,7 @@ export function fileDiff(cwd, relPath, opts = {}) {
 
   // Deleted from tree but still known to git
   if (!exists && tracked) {
-    const tip = base || 'HEAD';
+    const tip = rev || 'HEAD';
     const old = git(cwd, ['show', `${tip}:${relPath}`]);
     if (old == null) return { base, status: 'D', lines: [] };
     const lines = old.split('\n').map((text) => ({ type: 'del', text }));

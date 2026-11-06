@@ -59,11 +59,6 @@ export class CodeExplorer extends CodeGraphEngine {
               <div style={{ fontSize: 12, color: 'var(--color-neutral-500)', marginTop: 'var(--space-1)' }}>
                 {v.statLine}
               </div>
-              {v.gitSummary && (
-                <div style={{ fontSize: 11, color: 'var(--color-accent-300)', marginTop: 'var(--space-2)', lineHeight: 1.4 }}>
-                  {v.gitSummary}
-                </div>
-              )}
               <form
                 onSubmit={(e) => { e.preventDefault(); v.submitBranch(); }}
                 style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 'var(--space-3)' }}
@@ -79,6 +74,98 @@ export class CodeExplorer extends CodeGraphEngine {
                 />
                 {v.branchError && (
                   <div style={{ fontSize: 10.5, color: '#ff8a95', lineHeight: 1.35 }}>{v.branchError}</div>
+                )}
+              </form>
+              <form
+                onSubmit={(e) => { e.preventDefault(); v.submitCompare(); }}
+                style={{
+                  display: 'flex', flexDirection: 'column', gap: 8, marginTop: 'var(--space-4)',
+                  padding: 'var(--space-3)', borderRadius: 'var(--radius-md)',
+                  background: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <span style={{ fontSize: 10, letterSpacing: '0.08em', color: 'var(--color-neutral-500)' }}>HEAD</span>
+                  <span style={{
+                    fontSize: 11, color: 'var(--color-text)',
+                    padding: '2px 8px', borderRadius: 99,
+                    border: '1px solid var(--color-neutral-800)',
+                    maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>{v.gitHeadLabel || '…'}</span>
+                </div>
+                <div style={{ fontSize: 10, letterSpacing: '0.08em', color: 'var(--color-neutral-500)' }}>COMPARE TO</div>
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                  padding: '6px 8px', borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--color-accent-700)',
+                  background: 'var(--color-accent-900)',
+                }}>
+                  <span style={{
+                    fontSize: 12.5, color: 'var(--color-text)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>{v.gitBaseLabel || 'default branch'}</span>
+                  {v.gitPr?.number ? (
+                    v.gitPr.url ? (
+                      <a
+                        href={v.gitPr.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="tag tag-accent"
+                        style={{ textDecoration: 'none', flex: 'none' }}
+                      >PR #{v.gitPr.number}</a>
+                    ) : (
+                      <span className="tag tag-accent" style={{ flex: 'none' }}>PR #{v.gitPr.number}</span>
+                    )
+                  ) : null}
+                </div>
+                {v.gitBaseNote && (
+                  <div style={{
+                    fontSize: 10.5, lineHeight: 1.35,
+                    color: v.gitBaseSource === 'default' ? '#e6c07b' : 'var(--color-neutral-500)',
+                  }}>{v.gitBaseNote}</div>
+                )}
+                {(v.gitHeadLabel || v.gitBaseLabel) && (
+                  <div style={{ fontSize: 11, lineHeight: 1.45 }}>
+                    <span style={{ color: 'var(--color-text)' }}>{v.gitHeadLabel || 'HEAD'}</span>
+                    {v.gitBaseLabel && (
+                      <span style={{ color: 'var(--color-neutral-400)' }}> vs {v.gitBaseLabel}</span>
+                    )}
+                    {v.gitCounts?.A > 0 && <span style={{ color: '#2EFF7A' }}> · {v.gitCounts.A} added</span>}
+                    {v.gitCounts?.M > 0 && <span style={{ color: 'var(--color-accent-300)' }}> · {v.gitCounts.M} edited</span>}
+                    {v.gitCounts?.D > 0 && <span style={{ color: '#FF4D5E' }}> · {v.gitCounts.D} deleted</span>}
+                    {!v.gitFileCount && (
+                      <span style={{ color: 'var(--color-neutral-500)' }}> · no changes</span>
+                    )}
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    className="input"
+                    value={v.compareInput}
+                    onChange={v.onCompareInput}
+                    placeholder="Paste PR URL or #482…"
+                    aria-label="Pull request URL or number"
+                    title="Use this pull request’s base branch for the diff"
+                    style={{ flex: 1, minWidth: 0, fontSize: 11, padding: '5px 8px', minHeight: 28 }}
+                  />
+                  <button
+                    type="submit"
+                    className="btn"
+                    style={{
+                      fontSize: 11, padding: '5px 8px', flex: 'none',
+                      border: '1px solid var(--color-neutral-800)', borderRadius: 'var(--radius-md)',
+                    }}
+                  >Use PR base</button>
+                </div>
+                {v.comparePr && (
+                  <button
+                    type="button"
+                    onClick={v.clearCompare}
+                    style={{
+                      fontSize: 10.5, padding: 0, border: 'none', background: 'none',
+                      color: 'var(--color-accent-300)', cursor: 'pointer', textAlign: 'left',
+                    }}
+                  >Clear pasted PR</button>
                 )}
               </form>
             </div>

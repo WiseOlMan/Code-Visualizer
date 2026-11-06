@@ -22,6 +22,8 @@ serve options:
   --port <n>        Port (default: 8787, or the next free port)
   --all-files       Start showing the full graph, not "Changed files only"
   --open            Open the UI in the default browser
+  --base <branch>   Compare branch changes to this branch
+  --pr <n|url>      Compare to that pull request's base (wins over --base)
 
 Cloud / npx (do not npm i -g — EACCES on cloud VMs):
   npx -y github:WiseOlMan/Code-Visualizer serve --repo "$PWD"
@@ -83,10 +85,14 @@ async function serve(opts) {
   process.env.CODE_EXPLORER_SERVE_UI = '1';
   process.env.CODE_EXPLORER_CHANGED_ONLY = opts.allFiles ? '0' : '1';
   process.env.CODE_EXPLORER_DATA = path.join(os.homedir(), '.code-explorer', 'data');
+  if (opts.base) process.env.CODE_EXPLORER_BASE = opts.base;
+  if (opts.pr) process.env.CODE_EXPLORER_PR = opts.pr;
   const url = `http://localhost:${port}`;
   console.log('Code Explorer');
   console.log(`  repo  ${repo}`);
   console.log(`  ui    ${url}`);
+  if (opts.pr) console.log(`  pr    ${opts.pr}`);
+  else if (opts.base) console.log(`  base  ${opts.base}`);
   if (opts.open) openBrowser(url);
   await import(pathToFileURL(path.join(ROOT, 'server', 'index.mjs')).href);
 }
@@ -108,6 +114,8 @@ const { values, positionals } = parseArgs({
     port: { type: 'string' },
     'all-files': { type: 'boolean', default: false },
     open: { type: 'boolean', default: false },
+    base: { type: 'string' },
+    pr: { type: 'string' },
     out: { type: 'string' },
   },
   allowPositionals: true,
@@ -128,6 +136,8 @@ if (cmd === 'serve') {
     port: values.port,
     allFiles: values['all-files'],
     open: values.open,
+    base: values.base,
+    pr: values.pr,
   });
 } else if (cmd === 'analyze') {
   const repo = values.repo || positionals[1] || positionals[0];
