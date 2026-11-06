@@ -96,10 +96,12 @@ async function fetchWorkspace(root) {
   return res.json();
 }
 
-async function fetchGitChanges(root) {
+async function fetchGitChanges(root, { pr } = {}) {
   if (!root) return null;
   try {
-    const res = await fetch(`/api/git/changes?root=${encodeURIComponent(root)}`);
+    const qs = new URLSearchParams({ root });
+    if (pr) qs.set('pr', pr);
+    const res = await fetch(`/api/git/changes?${qs}`);
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -116,6 +118,10 @@ function gitInfoSig(info) {
     missing: info.missingFromGraph || [],
     files: (info.files || []).map((f) => [f.graphId, f.status, !!f.uncommitted]),
     heads: (info.stalePackages || []).map((p) => p.currentHead || ''),
+    base: info.baseLabel || info.base || null,
+    baseSource: info.baseSource || null,
+    baseNote: info.baseNote || null,
+    pr: info.pr?.number || null,
   });
 }
 
@@ -308,16 +314,23 @@ export default function App() {
   }, []);
 
   function patchTab(id, patch) {
-    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    setTabs((prev) => {
+      const next = prev.map((t) => (t.id === id ? { ...t, ...patch } : t));
+      tabsRef.current = next;
+      return next;
+    });
   }
 
   const refreshGit = useCallback(async (tabId, root) => {
     if (!tabId || !root) return;
-    const gitInfo = await fetchGitChanges(root);
-    if (!gitInfo) return;
     const tab = tabsRef.current.find((t) => t.id === tabId);
+    const gitInfo = await fetchGitChanges(root, { pr: tab?.comparePr || '' });
+    if (!gitInfo) return;
+    const current = tabsRef.current.find((t) => t.id === tabId);
     // Avoid re-rendering / re-laying-out the graph when nothing git-related changed.
-    if (tab && gitInfoSig(tab.gitInfo) === gitInfoSig(gitInfo)) return;
+    if (current && gitInfoSig(current.gitInfo) === gitInfoSig(gitInfo)) return;
+    // A newer paste can land while this request is in flight — drop the stale one.
+    if ((current?.comparePr || '') !== (tab?.comparePr || '')) return;
     patchTab(tabId, { gitInfo });
   }, []);
 
@@ -326,7 +339,7 @@ export default function App() {
     refreshGit(activeTab.id, activeTab.root);
     const t = setInterval(() => refreshGit(activeTab.id, activeTab.root), 15_000);
     return () => clearInterval(t);
-  }, [activeTab?.id, activeTab?.root, activeTab?.busy, activeTab?.reloadToken, refreshGit]);
+  }, [activeTab?.id, activeTab?.root, activeTab?.busy, activeTab?.reloadToken, activeTab?.comparePr, refreshGit]);
 
   // Re-analyze when HEAD moved or graph-missing files appear. Source edits use a
   // fingerprint so we don't loop on mtime noise after every analyze.
@@ -466,6 +479,14 @@ export default function App() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) throw new Error(data.error || `Checkout failed (${res.status})`);
+      // A pasted PR belongs to the branch we just left.
+      if (data.root) {
+        setTabs((prev) => {
+          const next = prev.map((t) => (t.root === data.root ? { ...t, comparePr: '' } : t));
+          tabsRef.current = next;
+          return next;
+        });
+      }
       // Same root refreshes the active tab; another repo opens/reuses a tab via analyze.
       await analyze(data.root);
       return true;
@@ -753,6 +774,8 @@ export default function App() {
                 onSwitchBranch={on ? switchBranch : undefined}
                 branchBusy={branchBusy}
                 branchError={on ? branchError : ''}
+                comparePr={tab.comparePr || ''}
+                onComparePr={(value) => patchTab(tab.id, { comparePr: String(value || '').trim() })}
                 query={on ? explorerQuery : ''}
                 onQueryChange={(q) => {
                   setSearchScope('repo');
