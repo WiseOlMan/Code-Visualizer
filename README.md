@@ -10,6 +10,7 @@ Interactive force-graph explorer for JavaScript / TypeScript codebases. Browse i
 - **Search** — magnifying glass (top-right of the tab row); this repo by default, or all open repos  
 - **Sidebar** — filters + legend; toggle from the panel icon at the top-left of the graph  
 - **Branch changes** — green fill = added, green ring = edited, red = deleted. The diff uses the open GitHub pull request’s base when this branch has one (so stacked PRs are not compared to `main`), otherwise `main`/`master`/`develop`. Paste a PR URL or `#N` under **Compare to** to pin that PR’s base. “Changed files only” keeps folder layout; Source panel shows line diffs; auto-refreshes when dirty sources change after analyze  
+- **Focus** — “Hide the rest” keeps N import hops around the changed files (1 hop) or 2–4 hand-picked seeds (2 hops). Direction is in, out, or both, and edges draw arrowheads. Pin a file to keep it visible; it shows ✅ untouched or ⚠️ touched. Hide tests is on by default. The view is stored in the URL, **Copy focus JSON** repeats it, and `POST /api/focus` returns the same neighborhood for a later screenshot. Clear focus restores the full graph  
 - **Switch branch** — paste a branch name to check it out in the current repo, or `owner/repo@branch` / a GitHub tree URL to open that repo (new tab) on that branch  
 
 Click a node for imports, callers, symbols, and source.

@@ -96,11 +96,12 @@ async function fetchWorkspace(root) {
   return res.json();
 }
 
-async function fetchGitChanges(root, { pr } = {}) {
+async function fetchGitChanges(root, { pr, base } = {}) {
   if (!root) return null;
   try {
     const qs = new URLSearchParams({ root });
     if (pr) qs.set('pr', pr);
+    else if (base) qs.set('base', base);
     const res = await fetch(`/api/git/changes?${qs}`);
     if (!res.ok) return null;
     return res.json();
@@ -119,6 +120,8 @@ function gitInfoSig(info) {
     files: (info.files || []).map((f) => [f.graphId, f.status, !!f.uncommitted]),
     heads: (info.stalePackages || []).map((p) => p.currentHead || ''),
     base: info.baseLabel || info.base || null,
+    head: info.headShort || null,
+    baseSha: info.baseShort || null,
     baseSource: info.baseSource || null,
     baseNote: info.baseNote || null,
     pr: info.pr?.number || null,
@@ -324,13 +327,14 @@ export default function App() {
   const refreshGit = useCallback(async (tabId, root) => {
     if (!tabId || !root) return;
     const tab = tabsRef.current.find((t) => t.id === tabId);
-    const gitInfo = await fetchGitChanges(root, { pr: tab?.comparePr || '' });
+    const gitInfo = await fetchGitChanges(root, { pr: tab?.comparePr || '', base: tab?.compareBase || '' });
     if (!gitInfo) return;
     const current = tabsRef.current.find((t) => t.id === tabId);
     // Avoid re-rendering / re-laying-out the graph when nothing git-related changed.
     if (current && gitInfoSig(current.gitInfo) === gitInfoSig(gitInfo)) return;
     // A newer paste can land while this request is in flight — drop the stale one.
     if ((current?.comparePr || '') !== (tab?.comparePr || '')) return;
+    if ((current?.compareBase || '') !== (tab?.compareBase || '')) return;
     patchTab(tabId, { gitInfo });
   }, []);
 
@@ -339,7 +343,7 @@ export default function App() {
     refreshGit(activeTab.id, activeTab.root);
     const t = setInterval(() => refreshGit(activeTab.id, activeTab.root), 15_000);
     return () => clearInterval(t);
-  }, [activeTab?.id, activeTab?.root, activeTab?.busy, activeTab?.reloadToken, activeTab?.comparePr, refreshGit]);
+  }, [activeTab?.id, activeTab?.root, activeTab?.busy, activeTab?.reloadToken, activeTab?.comparePr, activeTab?.compareBase, refreshGit]);
 
   // Re-analyze when HEAD moved or graph-missing files appear. Source edits use a
   // fingerprint so we don't loop on mtime noise after every analyze.
@@ -776,6 +780,7 @@ export default function App() {
                 branchError={on ? branchError : ''}
                 comparePr={tab.comparePr || ''}
                 onComparePr={(value) => patchTab(tab.id, { comparePr: String(value || '').trim() })}
+                onCompareBase={on ? (base) => patchTab(tab.id, { compareBase: String(base || '').trim() }) : undefined}
                 query={on ? explorerQuery : ''}
                 onQueryChange={(q) => {
                   setSearchScope('repo');

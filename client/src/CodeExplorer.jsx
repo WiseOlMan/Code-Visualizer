@@ -21,6 +21,227 @@ function LinkBtn({ onClick, children }) {
 }
 
 /** Left-panel toggle: filled rail when open (collapse), outline rail when closed (expand). */
+function FileGlyph() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style={{ flex: 'none' }}>
+      <path d="M2.5 1.5h4L9.5 4.5V10.5h-7z" stroke="#d2cefd" fill="none" strokeWidth="1" />
+      <path d="M6.5 1.6V4.4H9.4" stroke="#d2cefd" fill="none" strokeWidth="1" />
+    </svg>
+  );
+}
+
+function RadioDot({ on }) {
+  return (
+    <span style={{
+      width: 12, height: 12, borderRadius: 99, flex: 'none', boxSizing: 'border-box',
+      border: `1.5px solid ${on ? '#9184d9' : '#75798c'}`,
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      {on && <span style={{ width: 6, height: 6, borderRadius: 99, background: '#9184d9' }} />}
+    </span>
+  );
+}
+
+function Switch({ on }) {
+  return (
+    <span aria-hidden="true" style={{
+      width: 30, height: 16, borderRadius: 99, flex: 'none', position: 'relative',
+      background: on ? '#9184d9' : '#3f424d',
+    }}>
+      <span style={{
+        position: 'absolute', top: 2, left: on ? 14 : 2, width: 12, height: 12,
+        borderRadius: 99, background: '#f3f5fe',
+      }} />
+    </span>
+  );
+}
+
+function SegButton({ on, children, onClick, label }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      aria-label={label}
+      onClick={onClick}
+      style={{
+        minWidth: 28, padding: '4px 8px', borderRadius: 8, cursor: 'pointer',
+        font: 'inherit', fontSize: 12,
+        border: `1px solid ${on ? '#9184d9' : '#3f424d'}`,
+        background: on ? '#423a6a' : 'transparent',
+        color: on ? '#f5f4ff' : '#b2b6ca',
+      }}
+    >{children}</button>
+  );
+}
+
+function FocusChip({ label, badge, onRemove }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: '100%',
+      padding: '3px 6px', borderRadius: 8,
+      background: '#2b2741', border: '1px solid #5d5294',
+      fontSize: 11, color: '#e9e9ed',
+    }}>
+      <FileGlyph />
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      {badge === 'untouched' && <span title="untouched">✅</span>}
+      {badge === 'touched' && <span title="touched">⚠️</span>}
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove ${label}`}
+          style={{ border: 'none', background: 'none', color: '#b2b6ca', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1 }}
+        >×</button>
+      )}
+    </span>
+  );
+}
+
+function FocusCard({ v }) {
+  const row = {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+    width: '100%', padding: 0, border: 'none', background: 'none', color: 'inherit',
+    font: 'inherit', fontSize: 12, cursor: 'pointer', textAlign: 'left',
+  };
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 10,
+      padding: 'var(--space-4)', borderRadius: 'var(--radius-md)',
+      background: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)',
+    }}>
+      <div style={{ fontSize: 12, letterSpacing: '0.04em', color: 'var(--color-neutral-300)' }}>Focus</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {v.focusSeedChips.map((chip) => (
+          <FocusChip
+            key={chip.id}
+            label={chip.label}
+            onRemove={chip.removable ? () => v.removeFocusSeed(chip.id) : null}
+          />
+        ))}
+        {v.focusSeedMore > 0 && (
+          <span style={{ fontSize: 11, color: 'var(--color-neutral-500)', alignSelf: 'center' }}>+{v.focusSeedMore}</span>
+        )}
+      </div>
+      {v.focusSeedMode === 'picked' && v.focusSeeds.length < 2 && (
+        <div style={{ fontSize: 10.5, color: '#e6c07b' }}>Pick 2–4 files</div>
+      )}
+      <button
+        type="button"
+        onClick={() => v.openFocusPick('seed')}
+        style={{ ...row, color: '#d2cefd', justifyContent: 'flex-start', gap: 6 }}
+      >
+        + add seed
+      </button>
+      {v.focusPick === 'seed' && (
+        <FocusSearch v={v} placeholder="Search files to seed" />
+      )}
+      <button type="button" onClick={v.useChangedSeeds} style={row} aria-pressed={v.focusSeedMode === 'changed'}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <RadioDot on={v.focusSeedMode === 'changed'} />
+          <span><span style={{ color: 'var(--color-neutral-500)' }}>or · </span>Seed = changed files</span>
+        </span>
+      </button>
+      {v.focusSeeds.length >= 2 && (
+        <button type="button" onClick={v.usePickedSeeds} style={row} aria-pressed={v.focusSeedMode === 'picked'}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <RadioDot on={v.focusSeedMode === 'picked'} />
+            Hand-picked seeds
+          </span>
+        </button>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ fontSize: 12, color: 'var(--color-neutral-400)' }}>Hops</span>
+        <span style={{ display: 'inline-flex', gap: 4 }}>
+          {[1, 2, 3].map((n) => (
+            <SegButton key={n} on={v.focusHops === n} label={`${n} hop${n === 1 ? '' : 's'}`} onClick={() => v.setFocusHops(n)}>{n}</SegButton>
+          ))}
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ fontSize: 12, color: 'var(--color-neutral-400)' }}>Direction</span>
+        <span style={{ display: 'inline-flex', gap: 4 }}>
+          {['in', 'out', 'both'].map((dir) => (
+            <SegButton key={dir} on={v.focusDir === dir} label={`Direction ${dir}`} onClick={() => v.setFocusDir(dir)}>{dir}</SegButton>
+          ))}
+        </span>
+      </div>
+
+      <div style={{ fontSize: 12, color: 'var(--color-neutral-400)' }}>Watch</div>
+      {!!v.focusPinChips.length && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {v.focusPinChips.map((chip) => (
+            <FocusChip
+              key={chip.id}
+              label={chip.label}
+              badge={chip.badge}
+              onRemove={() => v.removeFocusPin(chip.id)}
+            />
+          ))}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => v.openFocusPick('pin')}
+        style={{ ...row, color: '#d2cefd', justifyContent: 'flex-start', gap: 6 }}
+      >
+        + pin file
+      </button>
+      {v.focusPick === 'pin' && (
+        <FocusSearch v={v} placeholder="Search files to pin" />
+      )}
+
+      <button type="button" onClick={v.toggleFocusTests} role="switch" aria-checked={v.focusHideTests} style={row}>
+        <span>Hide tests</span>
+        <Switch on={v.focusHideTests} />
+      </button>
+      <button type="button" onClick={v.toggleFocus} role="switch" aria-checked={v.focusOn} style={row}>
+        <span>Hide the rest</span>
+        <Switch on={v.focusOn} />
+      </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+        <button type="button" className="btn btn-ghost" onClick={v.copyFocusJson} style={{ fontSize: 11, padding: '4px 0' }}>
+          {v.focusCopied || 'Copy focus JSON'}
+        </button>
+        {v.focusOn && (
+          <button type="button" className="btn btn-ghost" onClick={v.clearFocus} style={{ fontSize: 11, padding: '4px 0' }}>
+            Clear focus
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FocusSearch({ v, placeholder }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <input
+        className="input"
+        autoFocus
+        value={v.focusQuery}
+        onChange={v.onFocusQuery}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        style={{ fontSize: 11, padding: '5px 8px', minHeight: 28 }}
+      />
+      {v.focusMatches.map((hit) => (
+        <button
+          key={hit.id}
+          type="button"
+          onClick={() => v.pickFocusMatch(hit.id)}
+          style={{
+            textAlign: 'left', fontSize: 11, padding: '4px 6px', cursor: 'pointer',
+            border: '1px solid transparent', borderRadius: 6, background: 'transparent',
+            color: 'var(--color-text)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          }}
+        >{hit.label}</button>
+      ))}
+    </div>
+  );
+}
+
 function SidebarIcon({ open }) {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -200,6 +421,8 @@ export class CodeExplorer extends CodeGraphEngine {
               </button>
             )}
 
+            <FocusCard v={v} />
+
             <div style={{
               display: 'flex', flexDirection: 'column', gap: 'var(--space-4)',
               padding: 'var(--space-4)', borderRadius: 'var(--radius-md)',
@@ -331,6 +554,31 @@ export class CodeExplorer extends CodeGraphEngine {
 
         <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
           <canvas ref={v.canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', cursor: 'grab' }} />
+
+          {v.focusOn && (v.focusSummary || v.focusShaPill) && (
+            <div style={{
+              position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+              pointerEvents: 'none', maxWidth: '70%',
+            }}>
+              {v.focusSummary && (
+                <div style={{
+                  padding: '5px 12px', borderRadius: 99,
+                  background: 'color-mix(in srgb, #161826 88%, transparent)',
+                  border: '1px solid #3f424d',
+                  fontSize: 12, color: '#e9e9ed', whiteSpace: 'nowrap',
+                }}>{v.focusSummary}</div>
+              )}
+              {v.focusShaPill && (
+                <div style={{
+                  padding: '4px 10px', borderRadius: 99,
+                  background: '#2b2741', border: '1px solid #9184d9',
+                  fontSize: 11, color: '#d2cefd', letterSpacing: '0.01em',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', whiteSpace: 'nowrap',
+                }}>{v.focusShaPill}</div>
+              )}
+            </div>
+          )}
 
           <button
             type="button"

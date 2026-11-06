@@ -157,6 +157,7 @@ export function collectGitChanges(packages, opts = {}) {
     const rev = resolveRev(pkg.root, requested);
     // Show the branch name (`feat/auth-layer`), even when the rev used is origin/…
     const base = shortBase(rev || requested);
+    const baseSha = rev ? git(pkg.root, ['rev-parse', '--verify', '--end-of-options', rev]) : null;
     const committed = rev && branch && base !== branch ? diffAgainstBase(pkg.root, requested) : [];
     // Always include uncommitted so WIP shows even on main
     const dirty = uncommitted(pkg.root);
@@ -181,6 +182,7 @@ export function collectGitChanges(packages, opts = {}) {
       branch,
       head,
       base,
+      baseSha,
       files: [...byPath.values()],
     });
   }

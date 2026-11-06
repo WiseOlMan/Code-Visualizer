@@ -186,6 +186,9 @@ test('a stacked branch diffs against the PR base, not main', () => {
     );
     assert.equal(changes[0].base, 'feat/auth-layer');
     assert.equal(changes[0].branch, 'feat/invite-flow');
+    assert.match(changes[0].head, /^[0-9a-f]{40}$/);
+    assert.match(changes[0].baseSha, /^[0-9a-f]{40}$/);
+    assert.notEqual(changes[0].baseSha, changes[0].head);
     assert.deepEqual(changes[0].files.map((f) => f.path), ['c.js']);
 
     const againstMain = collectGitChanges([{ root: dir, name: 'app', prefix: '' }], { base: 'main' });
