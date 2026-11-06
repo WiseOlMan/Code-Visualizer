@@ -209,7 +209,13 @@ async function buildGitChangesResponse(root, hints = {}) {
     const part = collectGitChanges([pkg], { base: spec?.baseLabel || spec?.base || undefined });
     pkgChanges.push(...part);
   }
-  const files = pkgChanges.flatMap((p) => p.files);
+  // Nested package roots live inside this one git repo, so `git -C` can repeat
+  // the same diff with a prefix that doesn't exist on disk. Keep real paths.
+  const files = pkgChanges.flatMap((p) => p.files).filter((f) => {
+    if (f.status === 'D') return true;
+    const abs = resolveChangedAbs(packages, f);
+    return !!(abs && fs.existsSync(abs));
+  });
   const nodeIds = new Set((graph?.nodes || []).map((n) => n.id));
   // Only JS/TS can appear in the graph — ignore docs/assets in the "missing" nag.
   const missingFromGraph = files.filter((f) => {
