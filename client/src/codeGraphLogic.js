@@ -7,6 +7,8 @@ const INK = { bg: '#161826', text: '#e9e9ed', edge: '#75798c', call: '#9184d9', 
 /** Branch-diff colors — neon green adds / edit rings; red deletions.
  *  Kept out of the folder palette so group greens never read as "added". */
 const GIT = { add: '#2EFF7A', edit: '#2EFF7A', del: '#FF4D5E', delDim: '#FF4D5E99' };
+/** Two lanes per edge: send = importer/caller → dependency, recv = dependency → importer. */
+const LANE = { send: '#6ec8f4', recv: '#f5b971' };
 const HOP_COLOR = {
   http: '#9184d9',
   call: '#b5abfc',
@@ -247,6 +249,159 @@ function extractSignature(src, sym) {
   return ann || (val ? '= ' + (val.length > 80 ? val.slice(0, 80) + '…' : val) : 'value');
 }
 
+/* ---------- "what this file is for": architectural summary from path, source and graph ---------- */
+function fileRole(n, src) {
+  const id = n.id;
+  const s = src || '';
+  const isJsx = /\.[jt]sx$/.test(id);
+  if (/\.(test|spec)\.[jt]sx?$/.test(id) || /(^|\/)(__tests__|tests?|cypress)\//.test(id)) {
+    return { role: 'Test suite', blurb: 'Verifies the behaviour of the code it imports. It never ships to users, but it guards the contracts other files rely on.' };
+  }
+  if (n.isEndpoint) {
+    return { role: 'API endpoint', blurb: `Serves ${n.url || 'an HTTP route'} — part of the backend surface that clients reach over the network.` };
+  }
+  if (/(^|\/)[\w.-]*\.config\.[cm]?[jt]s$/.test(id) || /(^|\/)(config|settings)(\/|\.[cm]?[jt]s$)/.test(id)) {
+    return { role: 'Configuration', blurb: 'Defines build or runtime settings that the rest of the system reads.' };
+  }
+  if (/^#!/.test(s)) return { role: 'CLI entry point', blurb: 'A command-line program: the outermost layer that wires the internals together for a user at a terminal.' };
+  if (/\b(app|server)\.listen\(|createServer\(/.test(s)) {
+    return { role: 'Server entry point', blurb: 'Boots the backend process — mounts routes and middleware and starts listening for requests.' };
+  }
+  if (/createRoot\(|ReactDOM\.render\(|hydrateRoot\(/.test(s)) {
+    return { role: 'App entry point', blurb: 'Mounts the UI into the page; the root of the client bundle.' };
+  }
+  if (/(^|\/)page\.[jt]sx?$/.test(id)) return { role: 'Page', blurb: 'A routed screen users navigate to directly.' };
+  if (/(^|\/)layout\.[jt]sx?$/.test(id)) return { role: 'Layout', blurb: 'Shared chrome that wraps every page beneath it in the route tree.' };
+  if (/(^|\/)use[A-Z][\w]*\.[jt]sx?$/.test(id) || /(^|\/)hooks\//.test(id)) {
+    return { role: 'React hook', blurb: 'Packages reusable stateful UI logic that components plug into.' };
+  }
+  if (/middleware/i.test(id)) return { role: 'Middleware', blurb: 'Runs on every matching request before handlers — a cross-cutting gate (auth, logging, parsing).' };
+  if (/(^|\/)(store|stores|state|redux|slices?|reducers?|contexts?|atoms?)(\/|\.)/i.test(id)) {
+    return { role: 'App state', blurb: 'Holds shared state that many screens read and update.' };
+  }
+  if (/(^|\/)(models?|schemas?|entities|prisma|db|database|migrations?|repositor(y|ies))(\/|\.|$)/i.test(id)) {
+    return { role: 'Data layer', blurb: 'Defines or accesses persistent data — the shape of what the system stores.' };
+  }
+  // Not a bare `client/` folder — that is usually the whole frontend, not an API client.
+  if (/(^|\/)(services?|api|api-?clients?|[\w-]+-client)(\/|\.|$)/i.test(id) || /(^|\/)[\w-]*(Service|Client)\.[jt]sx?$/.test(id)) {
+    return { role: 'Service', blurb: 'Encapsulates business logic or talks to an external system on behalf of callers.' };
+  }
+  if (/(^|\/)types?(\/|\.)|\.d\.ts$/.test(id)) return { role: 'Type definitions', blurb: 'Describes the shapes shared across modules; no runtime behaviour of its own.' };
+  if (isJsx && (/(^|\/)components?\//.test(id) || /<[A-Z]|return\s*\(\s*</.test(s))) {
+    return { role: 'UI component', blurb: 'A piece of the interface that renders data and handles user interaction.' };
+  }
+  if (/(^|\/)(utils?|helpers?|lib|shared|common)(\/|\.)/i.test(id)) {
+    return { role: 'Shared utility', blurb: 'General-purpose helpers reused across features.' };
+  }
+  if (/(^|\/)(tools|scripts|bin)\//.test(id)) return { role: 'Tooling', blurb: 'Build, analysis or maintenance code that supports the product rather than shipping in it.' };
+  if (/(Engine|Logic|Core|Manager|Controller)\b/.test(id)) {
+    return { role: 'Core logic', blurb: 'Holds the central behaviour that the surrounding files present or configure.' };
+  }
+  return { role: 'Module', blurb: '' };
+}
+
+function cleanComment(text) {
+  return text
+    .split('\n')
+    .map((l) => l.replace(/^\s*(\/\*\*?|\*\/|\*|\/\/)\s?/, '').replace(/\*\/\s*$/, '').trim())
+    .filter((l) => l && !/^@/.test(l) && !/^eslint/.test(l))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+/** The author's own description: the leading file comment, or the doc comment on the first export. */
+function headerComment(src) {
+  if (!src) return '';
+  const body = src.replace(/^#![^\n]*\n/, '').replace(/^\s*(['"])use (client|server|strict)\1;?\s*/, '');
+  let m = /^\s*(\/\*[\s\S]*?\*\/)/.exec(body) || /^\s*((?:\/\/[^\n]*\n\s*)+)/.exec(body);
+  if (!m) m = /(\/\*\*[\s\S]*?\*\/)\s*export\s/.exec(body);
+  if (!m) return '';
+  const text = cleanComment(m[1]);
+  if (text.length < 12) return '';
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  let out = '';
+  for (const sn of sentences) {
+    if ((out + sn).length > 260) break;
+    out += sn;
+  }
+  return (out || text.slice(0, 257) + '…').trim();
+}
+
+function exportedNames(src) {
+  if (!src) return [];
+  const names = new Set();
+  const re = /export\s+(?:default\s+)?(?:async\s+)?(?:function\*?|class|const|let|var|interface|type|enum)\s+([A-Za-z_$][\w$]*)/g;
+  let m;
+  while ((m = re.exec(src))) names.add(m[1]);
+  const braces = /export\s*\{([^}]*)\}/g;
+  while ((m = braces.exec(src))) {
+    for (const part of m[1].split(',')) {
+      const name = part.trim().split(/\s+as\s+/).pop();
+      if (name && name !== 'default') names.add(name);
+    }
+  }
+  if (!names.size && /export\s+default\b/.test(src)) names.add('default');
+  const cjs = /module\.exports\s*=\s*\{([^}]*)\}/.exec(src);
+  if (cjs) for (const part of cjs[1].split(',')) { const nm = part.split(':')[0].trim(); if (/^[\w$]+$/.test(nm)) names.add(nm); }
+  return [...names];
+}
+
+function plural(n, word) { return `${n} ${word}${n === 1 ? '' : 's'}`; }
+
+/**
+ * @param ctx {{ node, src, dependents: node[], dependencies: node[], callers: number,
+ *   callsOut: string[], hopsOut: {kind:string,label:string}[], fanInPct: number }}
+ */
+function describeFile({ node, src, dependents, dependencies, callers, callsOut, hopsOut, fanInPct }) {
+  const { role, blurb } = fileRole(node, src);
+  const purpose = headerComment(src);
+  const fanIn = dependents.length + callers;
+  const fanOut = dependencies.length + callsOut.length + hopsOut.length;
+  const areas = [...new Set(dependents.map((d) => d.g).filter(Boolean))];
+
+  let level, why;
+  if (fanIn >= 8 || (fanIn >= 3 && fanInPct >= 0.95)) {
+    level = 'Critical hub';
+    why = `${plural(fanIn, 'file')} depend on it across ${plural(areas.length || 1, 'area')}${areas.length ? ` (${areas.slice(0, 3).join(', ')}${areas.length > 3 ? '…' : ''})` : ''}. It sits in the top ${Math.max(1, Math.round((1 - fanInPct) * 100))}% by dependents, so a change here has a wide blast radius.`;
+  } else if (fanIn >= 3) {
+    level = 'Shared dependency';
+    why = `Reused by ${plural(fanIn, 'file')}${areas.length > 1 ? ` in ${areas.slice(0, 3).join(', ')}` : ''}; changes ripple to each of them.`;
+  } else if (fanIn === 0 && fanOut > 0) {
+    level = 'Entry point';
+    why = `Nothing local imports it — it's a starting point that pulls in ${plural(fanOut, 'dependency')}.`;
+  } else if (fanIn === 0) {
+    level = 'Isolated';
+    why = 'Nothing imports it and it imports nothing local — standalone, loaded dynamically, or possibly unused.';
+  } else if (fanOut === 0) {
+    level = 'Foundation';
+    why = `A leaf: it depends on nothing local, and ${plural(fanIn, 'file')} build on top of it.`;
+  } else {
+    level = 'Connector';
+    why = `Bridges ${plural(fanIn, 'dependent')} and ${plural(fanOut, 'dependency')} — a pass-through layer in the flow.`;
+  }
+
+  const boundaries = [];
+  if (callsOut.length) boundaries.push(`Calls ${plural(callsOut.length, 'backend endpoint')}: ${callsOut.slice(0, 3).join(', ')}${callsOut.length > 3 ? '…' : ''}`);
+  if (callers) boundaries.push(`Called over HTTP by ${plural(callers, 'client file')}`);
+  const writes = hopsOut.filter((h) => /write/.test(h.kind)).map((h) => h.label);
+  const reads = hopsOut.filter((h) => /read/.test(h.kind)).map((h) => h.label);
+  const jobs = hopsOut.filter((h) => h.kind === 'job').map((h) => h.label);
+  if (writes.length) boundaries.push(`Writes data: ${[...new Set(writes)].slice(0, 3).join(', ')}`);
+  if (reads.length) boundaries.push(`Reads data: ${[...new Set(reads)].slice(0, 3).join(', ')}`);
+  if (jobs.length) boundaries.push(`Enqueues jobs: ${[...new Set(jobs)].slice(0, 3).join(', ')}`);
+
+  let change = null;
+  if (node.gitChanged) {
+    const verb = node.gitStatus === 'A' ? 'Added' : node.gitStatus === 'D' ? 'Deleted' : 'Edited';
+    const reach = dependents.length
+      ? `${plural(dependents.length, 'dependent')} ${dependents.length === 1 ? 'receives' : 'receive'} this change.`
+      : 'No local files import it, so the change is contained.';
+    change = { verb, added: node.gitAdded || 0, deleted: node.gitDeleted || 0, lines: node.gitLines || 0, reach };
+  }
+
+  return { role, level, purpose, blurb, why, boundaries, exports: exportedNames(src), change };
+}
+
 /* ---------- the female-connector glyph ---------- */
 // A receptacle: dark cavity behind a coloured shell, with contact slots.
 // Drawn in world units so it scales with the view like every other node.
@@ -297,15 +452,134 @@ function socketPort(n, fx, fy) {
   return { x: n.x + dx / s, y: n.y + dy / s };
 }
 
+/* ---------- diff glyph: a tiny page whose code lines show the branch diff ---------- */
+function diffBox(n) {
+  const h = Math.max(15, n.r * 2.6), w = Math.max(12, h * 0.78);
+  return { w, h, x0: n.x - w / 2, y0: n.y - h / 2 };
+}
+function hashUnit(str, i) {
+  let h = 2166136261 ^ i;
+  for (let j = 0; j < str.length; j++) h = Math.imul(h ^ str.charCodeAt(j), 16777619);
+  return ((h >>> 0) % 1000) / 1000;
+}
+/** Row kinds proportional to unchanged / removed / added lines (min one row each when present). */
+function diffRows(n, rows) {
+  if (n.gitStatus === 'D') return Array(rows).fill('del');
+  const add = n.gitAdded || 0, del = n.gitDeleted || 0;
+  if (n.gitStatus === 'A' && !del) return Array(rows).fill('add');
+  const keep = Math.max(0, (n.gitLines || 0) - add);
+  const total = keep + add + del;
+  let a = add ? Math.max(1, Math.round(rows * add / (total || 1))) : 0;
+  let d = del ? Math.max(1, Math.round(rows * del / (total || 1))) : 0;
+  if (!total) { a = 1; d = 1; }
+  while (a + d > rows) { if (a >= d && a > 1) a--; else if (d > 1) d--; else break; }
+  const k = Math.max(0, rows - a - d);
+  const lead = Math.floor(k * 0.35);
+  return [
+    ...Array(lead).fill('keep'), ...Array(d).fill('del'),
+    ...Array(a).fill('add'), ...Array(k - lead).fill('keep'),
+  ];
+}
+function diffStatParts(n) {
+  const parts = [];
+  if (n.gitAdded) parts.push({ text: `+${n.gitAdded}`, color: GIT.add });
+  if (n.gitDeleted) parts.push({ text: `−${n.gitDeleted}`, color: GIT.del });
+  return parts;
+}
+function drawDiffGlyph(ctx, n, k, alpha, folderColor, emphasis) {
+  const { w, h, x0, y0 } = diffBox(n);
+  const fold = Math.min(w, h) * 0.3;
+  const page = () => {
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x0 + w - fold, y0);
+    ctx.lineTo(x0 + w, y0 + fold);
+    ctx.lineTo(x0 + w, y0 + h);
+    ctx.lineTo(x0, y0 + h);
+    ctx.closePath();
+  };
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#20222f';
+  page(); ctx.fill();
+  ctx.lineWidth = 1.2 / k;
+  ctx.strokeStyle = n.gitStatus === 'D' ? GIT.del : folderColor;
+  if (n.gitGhost) ctx.setLineDash([3 / k, 2.5 / k]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const padX = w * 0.15, top = y0 + fold * 0.85, bottom = y0 + h - w * 0.13;
+  const rows = Math.max(3, Math.min(12, Math.round((bottom - top) / 2.4)));
+  const rowH = (bottom - top) / rows;
+  const kinds = diffRows(n, rows);
+  for (let i = 0; i < rows; i++) {
+    const kind = kinds[i];
+    const full = w - padX * 2 - (i === 0 ? fold * 0.4 : 0);
+    const len = kind === 'keep' ? full * (0.35 + 0.6 * hashUnit(n.id, i)) : full;
+    ctx.globalAlpha = alpha * (kind === 'keep' ? 0.45 : 1);
+    ctx.fillStyle = kind === 'add' ? GIT.add : kind === 'del' ? GIT.del : folderColor;
+    ctx.fillRect(x0 + padX, top + i * rowH + rowH * 0.2, len, rowH * 0.6);
+  }
+  if (emphasis) {
+    ctx.globalAlpha = 0.95;
+    ctx.lineWidth = 2.2 / k;
+    ctx.strokeStyle = emphasis;
+    const g = 2.2 / k;
+    ctx.beginPath(); ctx.roundRect(x0 - g, y0 - g, w + g * 2, h + g * 2, 2 / k); ctx.stroke();
+  }
+}
+/** Thin stacked diffstat under a changed endpoint socket. */
+function drawDiffBar(ctx, n, k, alpha, folderColor) {
+  const b = socketBox(n);
+  const y = b.y0 + b.h + 2.5 / k, hh = Math.max(1.6, 2.4 / k);
+  const add = n.gitStatus === 'D' ? 0 : (n.gitAdded || (n.gitStatus === 'A' ? 1 : 0));
+  const del = n.gitDeleted || (n.gitStatus === 'D' ? 1 : 0);
+  const keep = n.gitStatus === 'A' || n.gitStatus === 'D' ? 0 : Math.max(0, (n.gitLines || 0) - add);
+  const total = add + del + keep || 1;
+  let x = b.x0;
+  for (const [v, c, a] of [[del, GIT.del, 1], [add, GIT.add, 1], [keep, folderColor, 0.45]]) {
+    if (!v) continue;
+    const segW = b.w * (v / total);
+    ctx.globalAlpha = alpha * a;
+    ctx.fillStyle = c;
+    ctx.fillRect(x, y, segW, hh);
+    x += segW;
+  }
+}
+
+/** Offset the center curve into a send lane (s→t) and a receive lane (t→s, path reversed). */
+function laneCurves(c, k) {
+  const dx = c.end.x - c.start.x, dy = c.end.y - c.start.y;
+  const d = Math.hypot(dx, dy) || 1;
+  const off = Math.max(0.9, 2.1 / k);
+  const nx = (-dy / d) * off, ny = (dx / d) * off;
+  return {
+    send: { start: { x: c.start.x + nx, y: c.start.y + ny }, cx: c.cx + nx, cy: c.cy + ny, end: { x: c.end.x + nx, y: c.end.y + ny } },
+    recv: { start: { x: c.end.x - nx, y: c.end.y - ny }, cx: c.cx - nx, cy: c.cy - ny, end: { x: c.start.x - nx, y: c.start.y - ny } },
+  };
+}
+/** Distance from a node's center to its outline along angle `ang`. */
+function edgeInset(n, ang) {
+  const e = extents(n);
+  if (e.round) return e.hw;
+  const cx = Math.abs(Math.cos(ang)), cy = Math.abs(Math.sin(ang));
+  return Math.min(cx ? e.hw / cx : 1e9, cy ? e.hh / cy : 1e9);
+}
+
 /* ---------- collision ---------- */
 // Every node has a footprint: circles their radius, sockets their shell box.
 // Overlap is resolved as a hard positional correction after the force pass,
 // so nothing ever ends up sitting on top of anything else.
 const NODE_GAP = 4;
 function extents(n) {
-  if (!n.isEndpoint) return { hw: n.r, hh: n.r, round: true };
-  const b = socketBox(n);
-  return { hw: b.w / 2, hh: b.h / 2, round: false };
+  if (n.isEndpoint) {
+    const b = socketBox(n);
+    return { hw: b.w / 2, hh: b.h / 2, round: false };
+  }
+  if (n.gitChanged) {
+    const b = diffBox(n);
+    return { hw: b.w / 2, hh: b.h / 2, round: false };
+  }
+  return { hw: n.r, hh: n.r, round: true };
 }
 function separateNodes(ns, iterations) {
   for (let it = 0; it < iterations; it++) {
@@ -378,6 +652,7 @@ export class CodeGraphEngine extends React.Component {
     this.nodes = []; this.links = []; this.byId = {};
     this.hover = null; this.hoverHop = null; this.drag = null; this.pan = null;
     this.alpha = 1;
+    this.reduceMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     if (p.initialOnlyGit) this.state = { ...this.state, onlyGit: true };
   }
 
@@ -695,10 +970,9 @@ export class CodeGraphEngine extends React.Component {
     this._needsFit = false;
     this._settle = 0;
     if (node) this.fitSelection(node);
-    const openSource = !!(node && node.gitChanged);
     this.setState({
       selId: id, selHopKey: node ? null : this.state.selHopKey, code: null, codeDiff: null,
-      panelTab: openSource ? 'source' : 'details',
+      panelTab: 'details',
     }, () => {
       if (!node || this.state.selId !== node.id) return;
       this._needsFit = false;
@@ -846,6 +1120,7 @@ export class CodeGraphEngine extends React.Component {
   applyGitOverlay(gitInfo) {
     const files = gitInfo?.files || [];
     const byStatus = new Map();
+    const statsById = new Map();
     const rank = { A: 3, M: 2, D: 1 };
     for (const f of files) {
       if (!f.graphId) continue;
@@ -853,10 +1128,15 @@ export class CodeGraphEngine extends React.Component {
       if (!st) continue;
       const prev = byStatus.get(f.graphId);
       if (!prev || (rank[st] || 0) > (rank[prev] || 0)) byStatus.set(f.graphId, st);
+      statsById.set(f.graphId, { added: f.added || 0, deleted: f.deleted || 0, lines: f.lines || 0 });
     }
+    const statSig = (id) => {
+      const s = statsById.get(id);
+      return s ? `${s.added},${s.deleted},${s.lines}` : '';
+    };
 
     const overlaySig = [...byStatus.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([id, st]) => `${id}:${st}`).join('|')
+      .map(([id, st]) => `${id}:${st}:${statSig(id)}`).join('|')
       + `|stale:${gitInfo?.stale ? 1 : 0}:${gitInfo?.staleReason || ''}`
       + `|miss:${(gitInfo?.missingFromGraph || []).join(',')}`;
     if (overlaySig === this._gitOverlaySig && this.nodes?.length) {
@@ -884,6 +1164,10 @@ export class CodeGraphEngine extends React.Component {
       n.gitStatus = byStatus.get(n.id) || null;
       n.gitChanged = !!n.gitStatus;
       n.gitGhost = false;
+      const s = statsById.get(n.id);
+      n.gitAdded = s?.added || 0;
+      n.gitDeleted = s?.deleted || 0;
+      n.gitLines = s?.lines || 0;
     }
 
     // Deletions still show when the file remains in the last graph; if it's
@@ -904,6 +1188,7 @@ export class CodeGraphEngine extends React.Component {
           g: g.label, gkey: g.key, gcolor: g.color,
           color: GIT.del,
           gitStatus: 'D', gitChanged: true, gitGhost: true,
+          gitAdded: 0, gitDeleted: statsById.get(graphId)?.deleted || 0, gitLines: 0,
           inDeg: 0, outDeg: 0, isEndpoint: false, url: null,
           x: (anchor?.x ?? W / 2) + (Math.random() - 0.5) * 40,
           y: (anchor?.y ?? H / 2) + (Math.random() - 0.5) * 40,
@@ -941,6 +1226,8 @@ export class CodeGraphEngine extends React.Component {
       gitStaleReason: gitInfo?.staleReason || null,
       gitFileCount,
       gitCounts: counts,
+      gitLineTotals: (this.nodes || []).reduce((t, n) => (n.gitChanged
+        ? { added: t.added + (n.gitAdded || 0), deleted: t.deleted + (n.gitDeleted || 0) } : t), { added: 0, deleted: 0 }),
     };
     // Auto: colors on when there are edits, off when the diff is empty.
     // Manual toggle pins until the change set clears, then auto resumes.
@@ -1058,8 +1345,8 @@ export class CodeGraphEngine extends React.Component {
     }
     let best = null, bd = 1e9;
     for (const n of candidates) {
-      if (n.isEndpoint) {
-        const b = socketBox(n);
+      if (n.isEndpoint || n.gitChanged) {
+        const b = n.isEndpoint ? socketBox(n) : diffBox(n);
         if (p.x > b.x0 - slop && p.x < b.x0 + b.w + slop && p.y > b.y0 - slop && p.y < b.y0 + b.h + slop) {
           const d = (n.x - p.x) ** 2 + (n.y - p.y) ** 2;
           if (d < bd) { bd = d; best = n; }
@@ -1234,8 +1521,10 @@ export class CodeGraphEngine extends React.Component {
         }
       } else this._settle = 0;
     }
+    // Lit lanes animate their flow, so keep painting while any are on screen.
+    if (this._flowing) this.dirty = true;
     if (this.dirty) { this.draw(); this.dirty = false; }
-    if (!settled || this._needsFit) this._raf = requestAnimationFrame(this.tick);
+    if (!settled || this._needsFit || this._flowing) this._raf = requestAnimationFrame(this.tick);
   };
 
   step() {
@@ -1505,6 +1794,9 @@ export class CodeGraphEngine extends React.Component {
     const hopOn = this.state.showHops !== false;
     const selHopKey = this.state.selHopKey;
     const hopLabelLinks = [];
+    const gitMode = !!this.state.highlightGit && (this.state.gitFileCount || 0) > 0;
+    const flowPx = this.reduceMotion ? 0 : (performance.now() / 1000) * 26;
+    let flowing = 0;
     for (const l of linkList) {
       const typed = hopKindOf(l);
       const isCall = l.kind === 'call';
@@ -1517,76 +1809,85 @@ export class CodeGraphEngine extends React.Component {
       if (contextEdge && !nodeOn && !selectedHop && !hoverHop) continue;
       const dim = q && !(l.s.id.toLowerCase().includes(q) || l.t.id.toLowerCase().includes(q));
       const c = linkCurve(l);
-      if (typed && hopOn) {
-        // Quiet until a connected file or this hop is the focus — idle 0.72
-        // made every Drizzle/HTTP edge a wall and hid branch colors.
-        if (selectedHop || hoverHop) {
-          ctx.globalAlpha = 1;
-          ctx.lineWidth = (selectedHop ? 3.1 : 2.4) / k;
-        } else if (contextEdge) {
-          ctx.globalAlpha = 0.1;
-          ctx.lineWidth = 0.65 / k;
-        } else if (nodeOn) {
-          ctx.globalAlpha = 0.92;
-          ctx.lineWidth = 2.05 / k;
-        } else if (focus || selHopKey) {
-          ctx.globalAlpha = 0.07;
-          ctx.lineWidth = 0.7 / k;
-        } else {
-          ctx.globalAlpha = 0.14;
-          ctx.lineWidth = 0.75 / k;
-        }
-        ctx.strokeStyle = hopColor(l);
-        ctx.setLineDash(typed === 'http' ? [5 / k * k, 4] : []);
-      } else {
-        const on = focus ? nodeOn : true;
-        if (contextEdge) {
-          ctx.globalAlpha = 0.08;
-        } else {
-          ctx.globalAlpha = on ? (focus ? 0.9 : isCall ? 0.34 : hopOn ? 0.12 : 0.26) : 0.05;
-        }
-        if (dim && !on) ctx.globalAlpha *= 0.3;
-        ctx.strokeStyle = isCall ? INK.call : (on && focus && !contextEdge ? l.t.color : INK.edge);
-        ctx.lineWidth = contextEdge
-          ? (isCall ? 0.55 : 0.45)
-          : isCall ? Math.min(2.6, 0.7 + l.weight * 0.3) : Math.min(3.2, 0.55 + l.weight * 0.28);
-        ctx.setLineDash(isCall ? [5 / k * k, 4] : []);
-      }
+      const lanes = laneCurves(c, k);
+      const dashed = isCall || typed === 'http';
+      const kindColor = typed ? hopColor(l) : isCall ? INK.call : LANE.send;
+      const idleColor = typed || isCall ? kindColor : INK.edge;
+      const touchesGit = gitMode && (l.s.gitChanged || l.t.gitChanged);
+      const weightW = Math.min(2.4, 0.9 + (l.weight || 1) * 0.2);
 
-      ctx.beginPath();
-      ctx.moveTo(c.start.x, c.start.y);
-      ctx.quadraticCurveTo(c.cx, c.cy, c.end.x, c.end.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      for (const lane of ['send', 'recv']) {
+        const p = lanes[lane];
+        // The lane leaving a changed file is the one the diff affects.
+        const emitter = lane === 'send' ? l.s : l.t;
+        const target = lane === 'send' ? l.t : l.s;
+        const laneColor = lane === 'send' ? kindColor : LANE.recv;
+        let alpha, width, color, flow = false;
+        if (selectedHop || hoverHop) {
+          color = laneColor; alpha = 1; width = selectedHop ? 2.2 : 1.8; flow = true;
+        } else if (touchesGit) {
+          if (emitter.gitChanged) {
+            const quiet = !!focus && !nodeOn;
+            color = emitter.gitStatus === 'D' ? GIT.del : GIT.add;
+            alpha = quiet ? 0.16 : 0.95; width = quiet ? 0.7 : 1.7; flow = !quiet;
+          } else {
+            color = INK.edge; alpha = nodeOn ? 0.32 : 0.1; width = 0.6;
+          }
+        } else if (contextEdge) {
+          color = INK.edge; alpha = 0.1; width = 0.55;
+        } else if (nodeOn) {
+          color = laneColor; alpha = 0.92; width = weightW; flow = true;
+        } else if (focus || selHopKey) {
+          color = idleColor; alpha = 0.05; width = 0.6;
+        } else {
+          color = idleColor; alpha = typed ? 0.14 : isCall ? 0.3 : hopOn ? 0.13 : 0.2; width = 0.7;
+        }
+        if (dim && !nodeOn) alpha *= 0.3;
+
+        const stroke = () => {
+          ctx.beginPath();
+          ctx.moveTo(p.start.x, p.start.y);
+          ctx.quadraticCurveTo(p.cx, p.cy, p.end.x, p.end.y);
+          ctx.stroke();
+        };
+        ctx.strokeStyle = color;
+        if (flow) {
+          // Faint track, then marching dashes moving start → end along the lane.
+          ctx.globalAlpha = alpha * 0.28;
+          ctx.lineWidth = width / k;
+          stroke();
+          ctx.globalAlpha = alpha;
+          ctx.lineWidth = (width + 0.5) / k;
+          ctx.setLineDash([6 / k, 7 / k]);
+          ctx.lineDashOffset = -(flowPx % 13) / k;
+          stroke();
+          ctx.setLineDash([]);
+          ctx.lineDashOffset = 0;
+          const ang = Math.atan2(p.end.y - p.cy, p.end.x - p.cx);
+          const back = target.isEndpoint ? 1.5 / k : edgeInset(target, ang) + 1.5 / k;
+          const ax = p.end.x - Math.cos(ang) * back, ay = p.end.y - Math.sin(ang) * back;
+          const s = 5.5 / k;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(ax - Math.cos(ang - 0.45) * s, ay - Math.sin(ang - 0.45) * s);
+          ctx.lineTo(ax - Math.cos(ang + 0.45) * s, ay - Math.sin(ang + 0.45) * s);
+          ctx.closePath(); ctx.fill();
+          flowing++;
+        } else {
+          ctx.globalAlpha = alpha;
+          ctx.lineWidth = width / k;
+          ctx.setLineDash(dashed ? [5 / k, 4 / k] : []);
+          stroke();
+          ctx.setLineDash([]);
+        }
+      }
 
       if (typed && hopOn && (selectedHop || hoverHop || (nodeOn && !contextEdge))) {
         hopLabelLinks.push({ l, c, selectedHop });
       }
-
-      if (nodeOn && focus && !typed && !contextEdge) {
-        const ang = Math.atan2(c.end.y - c.cy, c.end.x - c.cx);
-        ctx.fillStyle = ctx.strokeStyle;
-        if (isCall) {
-          // a plug prong meeting the socket, rather than an arrowhead
-          const px = c.end.x - Math.cos(ang) * 1.5, py = c.end.y - Math.sin(ang) * 1.5;
-          ctx.lineWidth = 3.4;
-          ctx.strokeStyle = INK.call;
-          ctx.beginPath();
-          ctx.moveTo(px - Math.cos(ang) * 5.5, py - Math.sin(ang) * 5.5);
-          ctx.lineTo(px, py);
-          ctx.stroke();
-        } else {
-          const dx = c.end.x - c.start.x, dy = c.end.y - c.start.y;
-          const d = Math.sqrt(dx * dx + dy * dy) || 1;
-          const ax = c.end.x - dx / d * (l.t.r + 2), ay = c.end.y - dy / d * (l.t.r + 2);
-          ctx.beginPath();
-          ctx.moveTo(ax, ay);
-          ctx.lineTo(ax - Math.cos(ang - 0.4) * 7, ay - Math.sin(ang - 0.4) * 7);
-          ctx.lineTo(ax - Math.cos(ang + 0.4) * 7, ay - Math.sin(ang + 0.4) * 7);
-          ctx.closePath(); ctx.fill();
-        }
-      }
     }
+    this._flowing = flowing > 0 && !this.reduceMotion;
 
     const hopLabelCap = 14;
     const hopRank = (h) => {
@@ -1666,27 +1967,30 @@ export class CodeGraphEngine extends React.Component {
           : (peek && !n.gitChanged ? INK.text : null)
           || (q && match && q.length > 1 ? INK.text : null);
         drawSocket(ctx, n, k, alpha, emph, gitFill, hlGit && n.gitStatus === 'D');
+        if (hlGit && n.gitChanged) drawDiffBar(ctx, n, k, alpha, n.color);
+      } else if (n.gitChanged) {
+        // Changed files read as a mini diff: code-line stripes in green/red/neutral proportion.
+        const emph = (n === sel || n === labeled) ? INK.text
+          : (q && match && q.length > 1 ? INK.text : null);
+        if (hlGit) drawDiffGlyph(ctx, n, k, alpha, n.color, emph);
+        else {
+          ctx.globalAlpha = alpha;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, n.r, 0, 6.2832);
+          ctx.fillStyle = folderFill;
+          ctx.fill();
+          if (emph) { ctx.lineWidth = 2.5 / k; ctx.strokeStyle = emph; ctx.globalAlpha = 0.95; ctx.stroke(); }
+        }
       } else {
         ctx.globalAlpha = alpha;
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r, 0, 6.2832);
-        // Added = neon green fill; deleted = red; edited keep (unmuted) folder color + ring.
-        if (hlGit && n.gitStatus === 'A') ctx.fillStyle = GIT.add;
-        else if (hlGit && n.gitStatus === 'D') ctx.fillStyle = GIT.del;
-        else ctx.fillStyle = folderFill;
+        ctx.fillStyle = folderFill;
         ctx.fill();
         if (n === sel || n === labeled) {
           ctx.lineWidth = 2.5 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.95; ctx.stroke();
         } else if (peek && !n.gitChanged) {
           ctx.lineWidth = 1.6 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.85; ctx.stroke();
-        } else if (hlGit && n.gitStatus === 'M') {
-          // Edited = bright green ring
-          ctx.lineWidth = 2.4 / k; ctx.strokeStyle = GIT.edit; ctx.globalAlpha = 1; ctx.stroke();
-        } else if (hlGit && n.gitStatus === 'A') {
-          ctx.lineWidth = 1.6 / k; ctx.strokeStyle = '#12c45a'; ctx.globalAlpha = 0.95; ctx.stroke();
-        } else if (hlGit && n.gitStatus === 'D') {
-          ctx.lineWidth = 1.8 / k; ctx.strokeStyle = '#ff8a95'; ctx.globalAlpha = 0.95;
-          ctx.setLineDash([3 / k, 2.5 / k]); ctx.stroke(); ctx.setLineDash([]);
         } else if (q && match && q.length > 1) {
           ctx.lineWidth = 1.5 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.8; ctx.stroke();
         }
@@ -1710,8 +2014,12 @@ export class CodeGraphEngine extends React.Component {
       const n = L.n;
       const size = Math.max(9, Math.min(13, 9.5 + n.r * 0.22)) / k;
       ctx.font = `${size}px Inter, ui-sans-serif, system-ui, sans-serif`;
-      const w = ctx.measureText(n.label).width;
-      const top = n.isEndpoint ? socketBox(n).y0 : n.y - n.r;
+      const stats = hlGit && n.gitChanged ? diffStatParts(n) : [];
+      const gap = size * 0.45;
+      const labelW = ctx.measureText(n.label).width;
+      const statWs = stats.map((s) => ctx.measureText(s.text).width);
+      const w = labelW + statWs.reduce((sum, sw) => sum + gap + sw, 0);
+      const top = n.y - extents(n).hh;
       const y = top - 5 / k;
       const box = { x0: n.x - w / 2 - 3 / k, x1: n.x + w / 2 + 3 / k, y0: y - size, y1: y + 3 / k };
       if (!L.primary) {
@@ -1729,7 +2037,21 @@ export class CodeGraphEngine extends React.Component {
       ctx.fill();
       ctx.globalAlpha = L.on ? 0.94 : 0.15;
       ctx.fillStyle = n.isEndpoint && !L.on ? INK.call : INK.text;
-      ctx.fillText(n.label, n.x, y);
+      if (!stats.length) {
+        ctx.fillText(n.label, n.x, y);
+        continue;
+      }
+      ctx.textAlign = 'left';
+      let x = n.x - w / 2;
+      ctx.fillText(n.label, x, y);
+      x += labelW;
+      stats.forEach((s, i) => {
+        x += gap;
+        ctx.fillStyle = s.color;
+        ctx.fillText(s.text, x, y);
+        x += statWs[i];
+      });
+      ctx.textAlign = 'center';
     }
     ctx.restore();
 
@@ -1817,7 +2139,33 @@ export class CodeGraphEngine extends React.Component {
       } else if (code) {
         codeMeta = code.split('\n').length + ' lines';
       }
+      // Summary uses the full graph, not the current filters — it describes the file's real role.
+      if (this._fanInFor !== this.links) {
+        const counts = {};
+        for (const l of this.links) if (l.kind === 'import') counts[l.t.id] = (counts[l.t.id] || 0) + 1;
+        const sorted = this.nodes.map((n) => counts[n.id] || 0).sort((a, b) => a - b);
+        this._fanIn = { counts, sorted };
+        this._fanInFor = this.links;
+      }
+      const { counts: fanCounts, sorted: fanSorted } = this._fanIn;
+      const myFan = fanCounts[sel.id] || 0;
+      let below = 0;
+      while (below < fanSorted.length && fanSorted[below] < myFan) below++;
+      const uniq = (arr) => [...new Set(arr)];
+      const summary = describeFile({
+        node: sel,
+        src: code,
+        dependents: uniq(this.links.filter((l) => l.kind === 'import' && l.t === sel).map((l) => l.s)),
+        dependencies: uniq(this.links.filter((l) => l.kind === 'import' && l.s === sel).map((l) => l.t)),
+        callers: uniq(this.links.filter((l) => l.kind === 'call' && l.t === sel).map((l) => l.s.id)).length,
+        callsOut: uniq(this.links.filter((l) => l.kind === 'call' && l.s === sel)
+          .map((l) => (l.urls && l.urls[0]) || ((this.endpointById || {})[l.t.id] || {}).url || l.t.label)),
+        hopsOut: this.links.filter((l) => l.kind === 'hop' && l.s === sel).map((l) => ({ kind: l.hop, label: l.label || l.t.label })),
+        fanInPct: fanSorted.length ? below / fanSorted.length : 0,
+      });
+
       selVal = {
+        summary,
         label: sel.label, path: sel.id, inDeg: incoming.length, outDeg: outgoing.length,
         endpoint: meta ? { url: meta.url, methods: (meta.methods || []).map(name => ({ name })) } : null,
         callers, hasCallers: callers.length > 0, callerCount: callers.length,
@@ -1911,6 +2259,7 @@ export class CodeGraphEngine extends React.Component {
       gitStaleReason: this.state.gitStaleReason,
       gitFileCount: this.state.gitFileCount,
       gitCounts: this.state.gitCounts || { A: 0, M: 0, D: 0 },
+      gitLineTotals: this.state.gitLineTotals || { added: 0, deleted: 0 },
       toggleHighlightGit: () => {
         const highlightGit = !this.state.highlightGit;
         this._gitHighlightPinned = highlightGit;
