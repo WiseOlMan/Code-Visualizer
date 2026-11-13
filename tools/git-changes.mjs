@@ -111,9 +111,61 @@ function uncommitted(cwd) {
   return files;
 }
 
+function countLines(abs) {
+  try {
+    const text = fs.readFileSync(abs, 'utf8');
+    if (!text) return 0;
+    const n = text.split('\n').length;
+    return text.endsWith('\n') ? n - 1 : n;
+  } catch {
+    return 0;
+  }
+}
+
+/** Per-path { added, deleted } vs the merge base (branch commits + working tree). */
+function numstatAgainst(cwd, base, branch) {
+  let rev = 'HEAD';
+  if (base && branch && base !== branch) rev = git(cwd, ['merge-base', base, 'HEAD']) || base;
+  const text = git(cwd, ['diff', '--numstat', '--no-renames', rev]);
+  const out = new Map();
+  if (!text) return out;
+  for (const line of text.split('\n')) {
+    const [a, d, ...rest] = line.split('\t');
+    const p = rest.join('\t');
+    if (!p) continue;
+    // Binary files report "-" for both counts.
+    out.set(p, { added: a === '-' ? 0 : +a || 0, deleted: d === '-' ? 0 : +d || 0 });
+  }
+  return out;
+}
+
+/** Attach added/deleted/lines so the UI can draw proportional diff glyphs. */
+function attachLineStats(cwd, files, base, branch) {
+  const stats = numstatAgainst(cwd, base, branch);
+  for (const f of files) {
+    const abs = path.join(cwd, f.path);
+    const exists = fs.existsSync(abs) && fs.statSync(abs).isFile();
+    const lines = exists ? countLines(abs) : 0;
+    const s = stats.get(f.path);
+    if (s) {
+      f.added = s.added;
+      f.deleted = s.deleted;
+    } else if (f.status === 'D') {
+      const old = git(cwd, ['show', `${base || 'HEAD'}:${f.path}`]);
+      f.added = 0;
+      f.deleted = old ? old.split('\n').length : 0;
+    } else {
+      // Untracked files never appear in numstat — the whole file is new.
+      f.added = lines;
+      f.deleted = 0;
+    }
+    f.lines = lines;
+  }
+}
+
 /**
  * @param {Array<{name?:string, prefix?:string, root:string}>} packages
- * @param {{ base?: string }} [opts]
+ * @param {{ base?: string, lineStats?: boolean }} [opts]
  */
 export function collectGitChanges(packages, opts = {}) {
   const out = [];
@@ -139,6 +191,7 @@ export function collectGitChanges(packages, opts = {}) {
         prefix: pkg.prefix || '',
       });
     }
+    if (opts.lineStats) attachLineStats(pkg.root, [...byPath.values()], base, branch);
     out.push({
       name: pkg.name || path.basename(pkg.root),
       prefix: pkg.prefix || '',

@@ -114,7 +114,7 @@ function gitInfoSig(info) {
     staleReason: info.staleReason || null,
     sourcesNewer: info.sourcesNewer || [],
     missing: info.missingFromGraph || [],
-    files: (info.files || []).map((f) => [f.graphId, f.status, !!f.uncommitted]),
+    files: (info.files || []).map((f) => [f.graphId, f.status, !!f.uncommitted, f.added, f.deleted]),
     heads: (info.stalePackages || []).map((p) => p.currentHead || ''),
   });
 }
