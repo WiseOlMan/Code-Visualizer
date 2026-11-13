@@ -142,8 +142,10 @@ function numstatAgainst(cwd, base, branch) {
 /** Attach added/deleted/lines so the UI can draw proportional diff glyphs. */
 function attachLineStats(cwd, files, base, branch) {
   const stats = numstatAgainst(cwd, base, branch);
+  // git reports paths relative to the repo top level, not the package root.
+  const top = git(cwd, ['rev-parse', '--show-toplevel']) || cwd;
   for (const f of files) {
-    const abs = path.join(cwd, f.path);
+    const abs = path.join(top, f.path);
     const exists = fs.existsSync(abs) && fs.statSync(abs).isFile();
     const lines = exists ? countLines(abs) : 0;
     const s = stats.get(f.path);
