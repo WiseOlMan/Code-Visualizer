@@ -35,6 +35,119 @@ function SidebarIcon({ open }) {
   );
 }
 
+function DiffPageIcon() {
+  return (
+    <svg width="12" height="15" viewBox="0 0 12 15" aria-hidden="true" style={{ flex: 'none' }}>
+      <path d="M0.5 0.5h7.5l3.5 3.5v10.5h-11z" fill="#20222f" stroke="var(--color-neutral-500)" />
+      <rect x="2" y="4" width="5" height="1.4" fill="var(--color-neutral-600)" />
+      <rect x="2" y="6.5" width="8" height="1.4" fill="#FF4D5E" />
+      <rect x="2" y="9" width="8" height="1.4" fill="#2EFF7A" />
+      <rect x="2" y="11.5" width="6" height="1.4" fill="var(--color-neutral-600)" />
+    </svg>
+  );
+}
+
+function LaneIcon({ color }) {
+  return (
+    <svg width="22" height="8" viewBox="0 0 22 8" aria-hidden="true" style={{ flex: 'none' }}>
+      <path d="M1 4h15" stroke={color} strokeWidth="1.6" strokeDasharray="3 2.5" />
+      <path d="M15 1.2l5 2.8-5 2.8z" fill={color} />
+    </svg>
+  );
+}
+
+const SECTION_LABEL = { fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-neutral-600)' };
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+/** Proportional added / removed / unchanged bar, same proportions as the canvas glyph. */
+function DiffBar({ added, deleted, lines, height = 6 }) {
+  const keep = Math.max(0, lines - added);
+  const total = added + deleted + keep || 1;
+  return (
+    <div style={{ display: 'flex', height, borderRadius: 99, overflow: 'hidden', background: 'var(--color-neutral-900)' }}>
+      <span style={{ width: `${(deleted / total) * 100}%`, background: '#FF4D5E' }} />
+      <span style={{ width: `${(added / total) * 100}%`, background: '#2EFF7A' }} />
+      <span style={{ flex: 1, background: 'var(--color-neutral-700)' }} />
+    </div>
+  );
+}
+
+function FileSummary({ summary, loading, onViewDiff }) {
+  if (!summary) return null;
+  const s = summary;
+  return (
+    <section style={{
+      flex: 'none', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)',
+      padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface)',
+      border: '1px solid var(--color-accent-800)', boxShadow: 'var(--shadow-sm)',
+    }}>
+      <div style={{ ...SECTION_LABEL, color: 'var(--color-accent-300)' }}>What this file is for</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+        <span className="tag tag-accent">{s.role}</span>
+        <span className="tag tag-accent-2">{s.level}</span>
+      </div>
+      {(s.purpose || s.blurb) && (
+        <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--color-text)' }}>{s.purpose || s.blurb}</div>
+      )}
+      {s.purpose && s.blurb && (
+        <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--color-neutral-400)' }}>{s.blurb}</div>
+      )}
+      {loading && !s.purpose && (
+        <div style={{ fontSize: 11, color: 'var(--color-neutral-600)' }}>Reading source…</div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={SECTION_LABEL}>Why it matters</div>
+        <div style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--color-neutral-300)' }}>{s.why}</div>
+      </div>
+      {s.boundaries.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <div style={SECTION_LABEL}>Talks to</div>
+          {s.boundaries.map((b) => (
+            <div key={b} style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--color-neutral-300)', wordBreak: 'break-word' }}>• {b}</div>
+          ))}
+        </div>
+      )}
+      {s.exports.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={SECTION_LABEL}>Exposes</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {s.exports.slice(0, 8).map((name) => (
+              <span key={name} style={{
+                fontFamily: MONO, fontSize: 10.5, padding: '2px 6px', borderRadius: 'var(--radius-sm)',
+                background: 'var(--color-neutral-900)', color: 'var(--color-accent-300)',
+              }}>{name}</span>
+            ))}
+            {s.exports.length > 8 && (
+              <span style={{ fontSize: 10.5, color: 'var(--color-neutral-500)', alignSelf: 'center' }}>+{s.exports.length - 8} more</span>
+            )}
+          </div>
+        </div>
+      )}
+      {s.change && (
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 'var(--space-3)',
+          borderTop: '1px solid var(--color-neutral-800)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+            <div style={SECTION_LABEL}>On this branch</div>
+            <span style={{ fontFamily: MONO, fontSize: 11 }}>
+              <span style={{ color: 'var(--color-neutral-400)' }}>{s.change.verb} </span>
+              {s.change.added > 0 && <span style={{ color: '#2EFF7A' }}>+{s.change.added} </span>}
+              {s.change.deleted > 0 && <span style={{ color: '#FF4D5E' }}>−{s.change.deleted}</span>}
+            </span>
+          </div>
+          <DiffBar added={s.change.added} deleted={s.change.deleted} lines={s.change.lines} />
+          <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--color-neutral-400)' }}>{s.change.reach}</div>
+          <button type="button" className="btn btn-ghost" onClick={onViewDiff}
+            style={{ alignSelf: 'flex-start', fontSize: 11.5, padding: '4px 8px' }}>
+            View diff →
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export class CodeExplorer extends CodeGraphEngine {
   render() {
     const v = this.renderVals();
@@ -181,23 +294,36 @@ export class CodeExplorer extends CodeGraphEngine {
                   display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 10.5,
                   color: 'var(--color-neutral-400)', alignItems: 'center',
                 }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 99, background: '#2EFF7A', display: 'block' }} />
-                    added{v.gitCounts?.A ? ` ${v.gitCounts.A}` : ''}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, width: '100%' }}>
+                    <DiffPageIcon />
+                    <span>
+                      Changed files show their diff:{' '}
+                      <span style={{ color: '#2EFF7A' }}>added</span> /{' '}
+                      <span style={{ color: '#FF4D5E' }}>removed</span> lines
+                    </span>
                   </span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{
-                      width: 8, height: 8, borderRadius: 99, display: 'block',
-                      border: '2px solid #2EFF7A', boxSizing: 'border-box',
-                    }} />
-                    edited{v.gitCounts?.M ? ` ${v.gitCounts.M}` : ''}
-                  </span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 99, background: '#FF4D5E', display: 'block' }} />
-                    deleted{v.gitCounts?.D ? ` ${v.gitCounts.D}` : ''}
+                  <span>
+                    {v.gitCounts?.A ? `${v.gitCounts.A} new · ` : ''}
+                    {v.gitCounts?.M ? `${v.gitCounts.M} edited · ` : ''}
+                    {v.gitCounts?.D ? `${v.gitCounts.D} deleted · ` : ''}
+                    <span style={{ color: '#2EFF7A' }}>+{v.gitLineTotals.added}</span>{' '}
+                    <span style={{ color: '#FF4D5E' }}>−{v.gitLineTotals.deleted}</span>
                   </span>
                 </div>
               )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 10.5, color: 'var(--color-neutral-400)' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <LaneIcon color="#6ec8f4" /> sends — imports, calls, writes
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <LaneIcon color="#f5b971" /> receives — exports, responses
+                </span>
+                {v.gitFileCount > 0 && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <LaneIcon color="#2EFF7A" /> lane affected by this branch
+                  </span>
+                )}
+              </div>
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
@@ -447,6 +573,8 @@ export class CodeExplorer extends CodeGraphEngine {
                 )
               ) : (
                 <>
+                  <FileSummary summary={sel.summary} loading={!sel.code && !sel.diffLines} onViewDiff={() => v.setPanelTab('source')} />
+
                   {sel.endpoint && (
                     <div style={{
                       flex: 'none', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)',
