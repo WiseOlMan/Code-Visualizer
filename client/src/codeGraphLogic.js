@@ -282,7 +282,8 @@ function fileRole(n, src) {
   if (/(^|\/)(models?|schemas?|entities|prisma|db|database|migrations?|repositor(y|ies))(\/|\.|$)/i.test(id)) {
     return { role: 'Data layer', blurb: 'Defines or accesses persistent data — the shape of what the system stores.' };
   }
-  if (/(^|\/)(services?|clients?|api)(\/|\.|$)/i.test(id)) {
+  // Not a bare `client/` folder — that is usually the whole frontend, not an API client.
+  if (/(^|\/)(services?|api|api-?clients?|[\w-]+-client)(\/|\.|$)/i.test(id) || /(^|\/)[\w-]*(Service|Client)\.[jt]sx?$/.test(id)) {
     return { role: 'Service', blurb: 'Encapsulates business logic or talks to an external system on behalf of callers.' };
   }
   if (/(^|\/)types?(\/|\.)|\.d\.ts$/.test(id)) return { role: 'Type definitions', blurb: 'Describes the shapes shared across modules; no runtime behaviour of its own.' };
@@ -393,7 +394,7 @@ function describeFile({ node, src, dependents, dependencies, callers, callsOut, 
   if (node.gitChanged) {
     const verb = node.gitStatus === 'A' ? 'Added' : node.gitStatus === 'D' ? 'Deleted' : 'Edited';
     const reach = dependents.length
-      ? `${plural(dependents.length, 'dependent')} receive this change.`
+      ? `${plural(dependents.length, 'dependent')} ${dependents.length === 1 ? 'receives' : 'receive'} this change.`
       : 'No local files import it, so the change is contained.';
     change = { verb, added: node.gitAdded || 0, deleted: node.gitDeleted || 0, lines: node.gitLines || 0, reach };
   }
@@ -1225,8 +1226,8 @@ export class CodeGraphEngine extends React.Component {
       gitStaleReason: gitInfo?.staleReason || null,
       gitFileCount,
       gitCounts: counts,
-      gitLineTotals: [...statsById.entries()].reduce((t, [id, s]) => (byStatus.has(id)
-        ? { added: t.added + s.added, deleted: t.deleted + s.deleted } : t), { added: 0, deleted: 0 }),
+      gitLineTotals: (this.nodes || []).reduce((t, n) => (n.gitChanged
+        ? { added: t.added + (n.gitAdded || 0), deleted: t.deleted + (n.gitDeleted || 0) } : t), { added: 0, deleted: 0 }),
     };
     // Auto: colors on when there are edits, off when the diff is empty.
     // Manual toggle pins until the change set clears, then auto resumes.

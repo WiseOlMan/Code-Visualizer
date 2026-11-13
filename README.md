@@ -2,17 +2,17 @@
 
 Interactive force-graph explorer for JavaScript / TypeScript codebases. Browse imports, folders, and HTTP API edges — locally, via `npx`, or from a Cursor cloud agent VM.
 
-- **Solid edges** — file imports  
-- **Dashed edges** — HTTP calls into backend routes  
+- **Two-lane edges** — every connection has a send lane (imports / calls / writes, blue) and a receive lane (exports / responses, amber); lanes animate the direction of flow when focused  
+- **Dashed edges** — HTTP calls into backend routes (when idle)  
 - **Socket glyphs** — API endpoints  
 - **Folders** — always-on layout cells (adjustable subfolder depth)  
 - **Tabs** — open multiple repos and switch between them (restored on refresh)  
 - **Search** — magnifying glass (top-right of the tab row); this repo by default, or all open repos  
 - **Sidebar** — filters + legend; toggle from the panel icon at the top-left of the graph  
-- **Branch changes** — green fill = added, green ring = edited, red = deleted (vs `main`/`master`); “Changed files only” keeps folder layout; Source panel shows line diffs; auto-refreshes when dirty sources change after analyze  
+- **Branch changes** — changed files render as a mini page whose code-line stripes are green (added) / red (removed) / gray (unchanged) in proportion to the diff vs `main`/`master`, labelled `+N −M`; only the lanes leaving a changed file light up green and animate; “Changed files only” keeps folder layout; Source panel shows line diffs; auto-refreshes when dirty sources change after analyze  
 - **Switch branch** — paste a branch name to check it out in the current repo, or `owner/repo@branch` / a GitHub tree URL to open that repo (new tab) on that branch  
 
-Click a node for imports, callers, symbols, and source.
+Click a node to open **What this file is for** — its architectural role, why it matters (blast radius from its dependents), what it talks to, what it exposes, and what this branch changed — plus imports, callers, symbols, and source.
 
 ## Quick start (this repo)
 
