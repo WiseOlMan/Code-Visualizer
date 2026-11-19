@@ -181,19 +181,23 @@ export class CodeExplorer extends CodeGraphEngine {
                   display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 10.5,
                   color: 'var(--color-neutral-400)', alignItems: 'center',
                 }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 99, background: '#2EFF7A', display: 'block' }} />
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} title="Full green = 100% new">
+                    <span style={{ width: 9, height: 9, borderRadius: 1, background: '#2EFF7A', display: 'block' }} />
                     added{v.gitCounts?.A ? ` ${v.gitCounts.A}` : ''}
                   </span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} title="Green/red fill = % added / % removed">
                     <span style={{
-                      width: 8, height: 8, borderRadius: 99, display: 'block',
-                      border: '2px solid #2EFF7A', boxSizing: 'border-box',
+                      width: 9, height: 9, borderRadius: 1, display: 'block', overflow: 'hidden',
+                      background: 'linear-gradient(to top, #2EFF7A 0 40%, #FF4D5E 40% 70%, #3a3d4c 70% 100%)',
+                      boxSizing: 'border-box', border: '1px solid #2EFF7A',
                     }} />
                     edited{v.gitCounts?.M ? ` ${v.gitCounts.M}` : ''}
                   </span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 99, background: '#FF4D5E', display: 'block' }} />
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} title="Full red = deleted">
+                    <span style={{
+                      width: 9, height: 9, borderRadius: 1, background: '#FF4D5E', display: 'block',
+                      outline: '1px dashed #ff8a95', outlineOffset: 0,
+                    }} />
                     deleted{v.gitCounts?.D ? ` ${v.gitCounts.D}` : ''}
                   </span>
                 </div>

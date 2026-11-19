@@ -4,7 +4,7 @@ import React from 'react';
 const asset = (_id, fallback) => fallback;
 
 const INK = { bg: '#161826', text: '#e9e9ed', edge: '#75798c', call: '#9184d9', plate: '#161826' };
-/** Branch-diff colors — neon green adds / edit rings; red deletions.
+/** Branch-diff colors — neon green additions / red deletions on touched squares.
  *  Kept out of the folder palette so group greens never read as "added". */
 const GIT = { add: '#2EFF7A', edit: '#2EFF7A', del: '#FF4D5E', delDim: '#FF4D5E99' };
 const HOP_COLOR = {
@@ -297,15 +297,81 @@ function socketPort(n, fx, fy) {
   return { x: n.x + dx / s, y: n.y + dy / s };
 }
 
+/* ---------- branch-diff square: fill = % added (green) + % deleted (red) ---------- */
+/** Fractions of the square filled by adds / deletes (each relative to that side's file size). */
+function diffFracs(n) {
+  if (n.gitStatus === 'D') return { add: 0, del: 1 };
+  if (n.gitStatus === 'A' && !(n.gitDeleted > 0)) return { add: 1, del: 0 };
+  const add = n.gitAdded || 0;
+  const del = n.gitDeleted || 0;
+  const lines = n.gitLines || 0;
+  const oldLines = Math.max(0, lines - add + del);
+  let addF = lines > 0 ? add / lines : (add ? 1 : 0);
+  let delF = oldLines > 0 ? del / oldLines : (del ? 1 : 0);
+  if (!add && !del) {
+    // Stats missing — still mark the file as touched with a modest dual cue.
+    if (n.gitStatus === 'M') return { add: 0.25, del: 0.25 };
+    return { add: 0, del: 0 };
+  }
+  // Tiny absolute diffs still get a readable band; keep relative add/del weight.
+  const MIN = 0.1;
+  if (addF > 0 && addF < MIN) addF = MIN;
+  if (delF > 0 && delF < MIN) delF = MIN;
+  const sum = addF + delF;
+  if (sum > 1) { addF /= sum; delF /= sum; }
+  return { add: addF, del: delF };
+}
+function drawDiffSquare(ctx, n, k, alpha, folderColor, emph) {
+  const s = n.r * 2;
+  const x0 = n.x - n.r;
+  const y0 = n.y - n.r;
+  const { add, del } = diffFracs(n);
+  ctx.globalAlpha = alpha;
+  // Unchanged remainder sits underneath; green/red stack up from the bottom.
+  ctx.fillStyle = folderColor || '#2a2d3a';
+  ctx.beginPath();
+  ctx.rect(x0, y0, s, s);
+  ctx.fill();
+  let y = y0 + s;
+  if (add > 0) {
+    const h = s * add;
+    y -= h;
+    ctx.fillStyle = GIT.add;
+    ctx.fillRect(x0, y, s, h);
+  }
+  if (del > 0) {
+    const h = s * del;
+    y -= h;
+    ctx.fillStyle = GIT.del;
+    ctx.fillRect(x0, y, s, h);
+  }
+  ctx.lineWidth = (emph ? 2.5 : 1.4) / k;
+  ctx.strokeStyle = emph ? INK.text
+    : n.gitStatus === 'D' ? '#ff8a95'
+    : n.gitStatus === 'A' ? '#12c45a'
+    : GIT.edit;
+  ctx.globalAlpha = alpha * (emph ? 0.95 : 0.9);
+  if (n.gitGhost || n.gitStatus === 'D') ctx.setLineDash([3 / k, 2.5 / k]);
+  ctx.beginPath();
+  ctx.rect(x0, y0, s, s);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
 /* ---------- collision ---------- */
-// Every node has a footprint: circles their radius, sockets their shell box.
+// Every node has a footprint: circles their radius, branch-diff squares the
+// same half-extent, sockets their shell box.
 // Overlap is resolved as a hard positional correction after the force pass,
 // so nothing ever ends up sitting on top of anything else.
 const NODE_GAP = 4;
 function extents(n) {
-  if (!n.isEndpoint) return { hw: n.r, hh: n.r, round: true };
-  const b = socketBox(n);
-  return { hw: b.w / 2, hh: b.h / 2, round: false };
+  if (n.isEndpoint) {
+    const b = socketBox(n);
+    return { hw: b.w / 2, hh: b.h / 2, round: false };
+  }
+  // Touched files render as squares — use box separation, not circle.
+  if (n.gitChanged) return { hw: n.r, hh: n.r, round: false };
+  return { hw: n.r, hh: n.r, round: true };
 }
 function separateNodes(ns, iterations) {
   for (let it = 0; it < iterations; it++) {
@@ -846,6 +912,7 @@ export class CodeGraphEngine extends React.Component {
   applyGitOverlay(gitInfo) {
     const files = gitInfo?.files || [];
     const byStatus = new Map();
+    const statsById = new Map();
     const rank = { A: 3, M: 2, D: 1 };
     for (const f of files) {
       if (!f.graphId) continue;
@@ -853,10 +920,15 @@ export class CodeGraphEngine extends React.Component {
       if (!st) continue;
       const prev = byStatus.get(f.graphId);
       if (!prev || (rank[st] || 0) > (rank[prev] || 0)) byStatus.set(f.graphId, st);
+      statsById.set(f.graphId, { added: f.added || 0, deleted: f.deleted || 0, lines: f.lines || 0 });
     }
+    const statSig = (id) => {
+      const s = statsById.get(id);
+      return s ? `${s.added},${s.deleted},${s.lines}` : '';
+    };
 
     const overlaySig = [...byStatus.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([id, st]) => `${id}:${st}`).join('|')
+      .map(([id, st]) => `${id}:${st}:${statSig(id)}`).join('|')
       + `|stale:${gitInfo?.stale ? 1 : 0}:${gitInfo?.staleReason || ''}`
       + `|miss:${(gitInfo?.missingFromGraph || []).join(',')}`;
     if (overlaySig === this._gitOverlaySig && this.nodes?.length) {
@@ -884,6 +956,10 @@ export class CodeGraphEngine extends React.Component {
       n.gitStatus = byStatus.get(n.id) || null;
       n.gitChanged = !!n.gitStatus;
       n.gitGhost = false;
+      const s = statsById.get(n.id);
+      n.gitAdded = s?.added || 0;
+      n.gitDeleted = s?.deleted || 0;
+      n.gitLines = s?.lines || 0;
     }
 
     // Deletions still show when the file remains in the last graph; if it's
@@ -904,6 +980,7 @@ export class CodeGraphEngine extends React.Component {
           g: g.label, gkey: g.key, gcolor: g.color,
           color: GIT.del,
           gitStatus: 'D', gitChanged: true, gitGhost: true,
+          gitAdded: 0, gitDeleted: statsById.get(graphId)?.deleted || 0, gitLines: 0,
           inDeg: 0, outDeg: 0, isEndpoint: false, url: null,
           x: (anchor?.x ?? W / 2) + (Math.random() - 0.5) * 40,
           y: (anchor?.y ?? H / 2) + (Math.random() - 0.5) * 40,
@@ -1061,6 +1138,14 @@ export class CodeGraphEngine extends React.Component {
       if (n.isEndpoint) {
         const b = socketBox(n);
         if (p.x > b.x0 - slop && p.x < b.x0 + b.w + slop && p.y > b.y0 - slop && p.y < b.y0 + b.h + slop) {
+          const d = (n.x - p.x) ** 2 + (n.y - p.y) ** 2;
+          if (d < bd) { bd = d; best = n; }
+        }
+        continue;
+      }
+      if (n.gitChanged) {
+        const half = n.r + slop;
+        if (Math.abs(p.x - n.x) <= half && Math.abs(p.y - n.y) <= half) {
           const d = (n.x - p.x) ** 2 + (n.y - p.y) ** 2;
           if (d < bd) { bd = d; best = n; }
         }
@@ -1666,27 +1751,20 @@ export class CodeGraphEngine extends React.Component {
           : (peek && !n.gitChanged ? INK.text : null)
           || (q && match && q.length > 1 ? INK.text : null);
         drawSocket(ctx, n, k, alpha, emph, gitFill, hlGit && n.gitStatus === 'D');
+      } else if (n.gitChanged) {
+        // Touched files → square whose green/red fill tracks add/delete share of the file.
+        const emph = n === sel || n === labeled || (q && match && q.length > 1);
+        drawDiffSquare(ctx, n, k, alpha, folderFill, emph);
       } else {
         ctx.globalAlpha = alpha;
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r, 0, 6.2832);
-        // Added = neon green fill; deleted = red; edited keep (unmuted) folder color + ring.
-        if (hlGit && n.gitStatus === 'A') ctx.fillStyle = GIT.add;
-        else if (hlGit && n.gitStatus === 'D') ctx.fillStyle = GIT.del;
-        else ctx.fillStyle = folderFill;
+        ctx.fillStyle = folderFill;
         ctx.fill();
         if (n === sel || n === labeled) {
           ctx.lineWidth = 2.5 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.95; ctx.stroke();
-        } else if (peek && !n.gitChanged) {
+        } else if (peek) {
           ctx.lineWidth = 1.6 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.85; ctx.stroke();
-        } else if (hlGit && n.gitStatus === 'M') {
-          // Edited = bright green ring
-          ctx.lineWidth = 2.4 / k; ctx.strokeStyle = GIT.edit; ctx.globalAlpha = 1; ctx.stroke();
-        } else if (hlGit && n.gitStatus === 'A') {
-          ctx.lineWidth = 1.6 / k; ctx.strokeStyle = '#12c45a'; ctx.globalAlpha = 0.95; ctx.stroke();
-        } else if (hlGit && n.gitStatus === 'D') {
-          ctx.lineWidth = 1.8 / k; ctx.strokeStyle = '#ff8a95'; ctx.globalAlpha = 0.95;
-          ctx.setLineDash([3 / k, 2.5 / k]); ctx.stroke(); ctx.setLineDash([]);
         } else if (q && match && q.length > 1) {
           ctx.lineWidth = 1.5 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.8; ctx.stroke();
         }
