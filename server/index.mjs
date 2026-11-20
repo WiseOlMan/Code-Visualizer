@@ -178,7 +178,7 @@ function buildGitChangesResponse(root, baseHint) {
   if (!packages.length) {
     return { ok: false, error: 'No packages for workspace', files: [], packages: [], stale: false };
   }
-  const pkgChanges = collectGitChanges(packages, { base: baseHint || undefined });
+  const pkgChanges = collectGitChanges(packages, { base: baseHint || undefined, lineStats: true });
   const files = pkgChanges.flatMap((p) => p.files);
   const nodeIds = new Set((graph?.nodes || []).map((n) => n.id));
   // Only JS/TS can appear in the graph — ignore docs/assets in the "missing" nag.
