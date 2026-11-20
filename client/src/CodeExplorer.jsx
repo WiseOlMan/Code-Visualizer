@@ -187,9 +187,8 @@ export class CodeExplorer extends CodeGraphEngine {
                   </span>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} title="Green/red fill = % added / % removed">
                     <span style={{
-                      width: 9, height: 9, borderRadius: 1, display: 'block', overflow: 'hidden',
-                      background: 'linear-gradient(to top, #2EFF7A 0 40%, #FF4D5E 40% 70%, #3a3d4c 70% 100%)',
-                      boxSizing: 'border-box', border: '1px solid #2EFF7A',
+                      width: 9, height: 9, borderRadius: 1, display: 'block', boxSizing: 'border-box',
+                      border: '1px solid #2EFF7A',
                     }} />
                     edited{v.gitCounts?.M ? ` ${v.gitCounts.M}` : ''}
                   </span>

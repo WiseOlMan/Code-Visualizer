@@ -321,17 +321,13 @@ function diffFracs(n) {
   if (sum > 1) { addF /= sum; delF /= sum; }
   return { add: addF, del: delF };
 }
-function drawDiffSquare(ctx, n, k, alpha, folderColor, emph) {
+function drawDiffSquare(ctx, n, k, alpha, emph) {
   const s = n.r * 2;
   const x0 = n.x - n.r;
   const y0 = n.y - n.r;
   const { add, del } = diffFracs(n);
   ctx.globalAlpha = alpha;
-  // Unchanged remainder sits underneath; green/red stack up from the bottom.
-  ctx.fillStyle = folderColor || '#2a2d3a';
-  ctx.beginPath();
-  ctx.rect(x0, y0, s, s);
-  ctx.fill();
+  // Green/red stack up from the bottom; the rest of the square stays empty.
   let y = y0 + s;
   if (add > 0) {
     const h = s * add;
@@ -1754,7 +1750,7 @@ export class CodeGraphEngine extends React.Component {
       } else if (n.gitChanged) {
         // Touched files → square whose green/red fill tracks add/delete share of the file.
         const emph = n === sel || n === labeled || (q && match && q.length > 1);
-        drawDiffSquare(ctx, n, k, alpha, folderFill, emph);
+        drawDiffSquare(ctx, n, k, alpha, emph);
       } else {
         ctx.globalAlpha = alpha;
         ctx.beginPath();
