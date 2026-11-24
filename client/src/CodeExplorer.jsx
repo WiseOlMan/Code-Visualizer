@@ -269,6 +269,12 @@ export class CodeExplorer extends CodeGraphEngine {
         )}
         <div className="ex-stage">
           <canvas ref={v.canvasRef} />
+          {v.emptyGraph && !v.captureBanner && (
+            <div className="ex-empty" role="status">
+              <p>No files match these filters.</p>
+              <button type="button" onClick={v.resetView}>Reset filters</button>
+            </div>
+          )}
           {v.captureBanner && (
             <div role="status" data-capture-banner className="ex-capture-banner">
               {v.captureBanner}

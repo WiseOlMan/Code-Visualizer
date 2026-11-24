@@ -4,6 +4,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizeGraphId } from '../client/src/focusView.js';
 
 function git(cwd, args) {
   try {
@@ -92,11 +93,16 @@ export function resolveBaseBranch(cwd) {
   return null;
 }
 
+function gitToplevel(cwd) {
+  const top = git(cwd, ['rev-parse', '--show-toplevel']);
+  return top ? path.resolve(top) : null;
+}
+
 function toGraphId(prefix, relPath) {
   const rel = String(relPath || '').split(path.sep).join('/');
   if (!rel) return null;
-  const pfx = (prefix || '').split(path.sep).join('/');
-  return pfx ? `${pfx}/${rel}` : rel;
+  const pfx = String(prefix || '').split(path.sep).join('/');
+  return normalizeGraphId(pfx ? `${pfx}/${rel}` : rel) || null;
 }
 
 function parseNameStatus(text) {
@@ -109,10 +115,11 @@ function parseNameStatus(text) {
     const status = (parts[0] || '?').replace(/\d+$/, '').slice(0, 1) || '?';
     const oldPath = parts.length >= 3 ? parts[1] : null;
     const filePath = parts.length >= 3 ? parts[parts.length - 1] : parts[1];
-    if (!filePath) continue;
+    const clean = normalizeGraphId(filePath);
+    if (!clean) continue;
     files.push({
-      path: filePath.split(path.sep).join('/'),
-      oldPath: oldPath ? oldPath.split(path.sep).join('/') : null,
+      path: clean,
+      oldPath: oldPath ? (normalizeGraphId(oldPath) || null) : null,
       status,
     });
   }
@@ -137,7 +144,7 @@ function parseNumstat(text) {
     if (parts.length < 3) continue;
     const additions = parts[0] === '-' ? 0 : Number(parts[0]) || 0;
     const deletions = parts[1] === '-' ? 0 : Number(parts[1]) || 0;
-    const filePath = numstatPath(parts.slice(2).join('\t')).split(path.sep).join('/');
+    const filePath = normalizeGraphId(numstatPath(parts.slice(2).join('\t')).split(path.sep).join('/'));
     const prev = map.get(filePath) || { additions: 0, deletions: 0 };
     map.set(filePath, {
       additions: prev.additions + additions,
@@ -255,12 +262,12 @@ function uncommitted(cwd) {
       oldPath = bits[0];
       filePath = bits.pop();
     }
-    if (filePath.startsWith('"') && filePath.endsWith('"')) filePath = filePath.slice(1, -1);
-    filePath = filePath.trim();
-    if (!filePath) continue;
+    const clean = normalizeGraphId(filePath);
+    const cleanOld = oldPath ? normalizeGraphId(oldPath) : null;
+    if (!clean) continue;
     files.push({
-      path: filePath.split(path.sep).join('/'),
-      oldPath: oldPath ? oldPath.split(path.sep).join('/') : null,
+      path: clean,
+      oldPath: cleanOld || null,
       status,
       uncommitted: true,
     });
@@ -273,19 +280,32 @@ function uncommitted(cwd) {
  * @param {{ base?: string }} [opts]
  */
 export function collectGitChanges(packages, opts = {}) {
-  const out = [];
+  // One diff per git repo. Nested folders such as services/ and api/ share the
+  // parent repo; diffing them separately emits ../ paths that never match node ids.
+  const byTop = new Map();
   for (const pkg of packages || []) {
     if (!pkg?.root || !isGitRepo(pkg.root)) continue;
-    const branch = gitBranch(pkg.root);
-    const head = gitHead(pkg.root);
-    const requested = opts.base || resolveBaseBranch(pkg.root);
-    const rev = resolveRev(pkg.root, requested);
+    const top = gitToplevel(pkg.root);
+    if (!top) continue;
+    const list = byTop.get(top) || [];
+    list.push(pkg);
+    byTop.set(top, list);
+  }
+  const out = [];
+  for (const [top, list] of byTop) {
+    const owner = list.find((p) => path.resolve(p.root) === top) || list[0];
+    const prefix = path.resolve(owner.root) === top ? (owner.prefix || '') : '';
+    const cwd = top;
+    const branch = gitBranch(cwd);
+    const head = gitHead(cwd);
+    const requested = opts.base || resolveBaseBranch(cwd);
+    const rev = resolveRev(cwd, requested);
     // Show the branch name (`feat/auth-layer`), even when the rev used is origin/…
     const base = shortBase(rev || requested);
-    const baseSha = rev ? git(pkg.root, ['rev-parse', '--verify', '--end-of-options', rev]) : null;
-    const committed = rev && branch && base !== branch ? diffAgainstBase(pkg.root, requested) : [];
+    const baseSha = rev ? git(cwd, ['rev-parse', '--verify', '--end-of-options', rev]) : null;
+    const committed = rev && branch && base !== branch ? diffAgainstBase(cwd, requested) : [];
     // Always include uncommitted so WIP shows even on main
-    const dirty = uncommitted(pkg.root);
+    const dirty = uncommitted(cwd);
     const byPath = new Map();
     const flat = [];
     for (const f of [...committed, ...dirty]) {
@@ -297,7 +317,7 @@ export function collectGitChanges(packages, opts = {}) {
       }
     }
     for (const f of flat) {
-      const graphId = toGraphId(pkg.prefix, f.path);
+      const graphId = toGraphId(prefix, f.path);
       if (!graphId) continue;
       const prev = byPath.get(graphId);
       byPath.set(graphId, {
@@ -306,22 +326,22 @@ export function collectGitChanges(packages, opts = {}) {
         graphId,
         status: f.status,
         uncommitted: !!(prev?.uncommitted || f.uncommitted),
-        package: pkg.name || path.basename(pkg.root),
-        prefix: pkg.prefix || '',
+        package: owner.name || path.basename(owner.root),
+        prefix,
       });
     }
-    const committedStat = diffNumstat(pkg.root, requested);
-    const dirtyStat = parseNumstat(git(pkg.root, ['diff', '--numstat', '--no-renames', 'HEAD']) || '');
+    const committedStat = diffNumstat(cwd, requested);
+    const dirtyStat = parseNumstat(git(cwd, ['diff', '--numstat', '--no-renames', 'HEAD']) || '');
     for (const file of byPath.values()) {
-      const committed = committedStat.get(file.path) || { additions: 0, deletions: 0 };
-      const dirty = dirtyStat.get(file.path) || { additions: 0, deletions: 0 };
+      const committed = committedStat.get(file.path) || committedStat.get(file.graphId) || { additions: 0, deletions: 0 };
+      const dirty = dirtyStat.get(file.path) || dirtyStat.get(file.graphId) || { additions: 0, deletions: 0 };
       let additions = committed.additions + dirty.additions;
       let deletions = committed.deletions + dirty.deletions;
-      const abs = path.join(pkg.root, file.path);
+      const abs = path.join(cwd, file.path);
       let headSrc = readFile(abs);
       const deleted = file.status === 'D';
       const added = file.status === 'A' || file.status === '?';
-      const baseSrc = rev && !added ? (git(pkg.root, ['show', `${rev}:${file.path}`]) || '') : '';
+      const baseSrc = rev && !added ? (git(cwd, ['show', `${rev}:${file.path}`]) || '') : '';
       if (deleted) headSrc = '';
       const lines = (deleted ? baseSrc : headSrc) ? (deleted ? baseSrc : headSrc).split('\n').length : 0;
       if (!additions && !deletions && added) additions = lines;
@@ -333,9 +353,9 @@ export function collectGitChanges(packages, opts = {}) {
       file.summary = code ? changeSummary(headSrc, added ? '' : baseSrc) : '';
     }
     out.push({
-      name: pkg.name || path.basename(pkg.root),
-      prefix: pkg.prefix || '',
-      root: pkg.root,
+      name: owner.name || path.basename(owner.root),
+      prefix,
+      root: cwd,
       branch,
       head,
       base,

@@ -8,7 +8,10 @@ import {
   focusStateJson,
   formatShaPill,
   hopOpacity,
+  createNodeIdIndex,
   isTestPath,
+  normalizeGraphId,
+  resolveChangedNodeId,
   shortDirLabel,
 } from './focusView.js';
 
@@ -41,6 +44,29 @@ test('test paths match the focus hide-tests rules', () => {
   assert.equal(isTestPath('src/tests/helper.ts'), true);
   assert.equal(isTestPath('lib/sync/test.ts'), false);
   assert.equal(isTestPath('lib/classifier.js'), false);
+  assert.equal(isTestPath('services/sender.test.mjs'), true);
+  assert.equal(isTestPath('api/routes.spec.jsx'), true);
+  assert.equal(isTestPath('src/__tests__/summary.js'), true);
+  assert.equal(isTestPath('tests/flow.js'), true);
+  assert.equal(isTestPath('src/latest/note.js'), false);
+});
+
+test('git paths normalize onto graph node ids', () => {
+  assert.equal(normalizeGraphId('services/../agents/sender.js'), 'agents/sender.js');
+  assert.equal(normalizeGraphId('./agents/sender.js'), 'agents/sender.js');
+  assert.equal(normalizeGraphId('"agents/my file.js"'), 'agents/my file.js');
+  const index = createNodeIdIndex([
+    'agents/sender.js',
+    'services/mail.js',
+    'src/services/mail.js',
+    'lib/index.js',
+    'api/index.js',
+  ]);
+  assert.equal(resolveChangedNodeId('agents/sender.js', index), 'agents/sender.js');
+  assert.equal(resolveChangedNodeId('services/../agents/sender.js', index), 'agents/sender.js');
+  assert.equal(resolveChangedNodeId('./services/mail.js', index), 'services/mail.js');
+  assert.equal(resolveChangedNodeId('pkg/services/mail.js', index), 'services/mail.js');
+  assert.equal(resolveChangedNodeId('index.js', index), null);
 });
 
 test('hops walk outward and stop at N', () => {

@@ -20,10 +20,116 @@ export function shortDirLabel(id) {
 
 export function isTestPath(id) {
   const p = String(id || '').replace(/\\/g, '/');
-  if (/(^|\/)__tests__\//.test(p)) return true;
-  if (/(^|\/)tests?\//.test(p)) return true;
+  if (/(^|\/)__tests__\//i.test(p)) return true;
+  if (/(^|\/)tests?\//i.test(p)) return true;
   const base = p.split('/').pop() || '';
-  return /\.(test|spec)\./.test(base);
+  // *.test.* and *.spec.* — any extension, including .mjs / .cjs / .jsx.
+  return /\.(test|spec)\./i.test(base);
+}
+
+/** Undo git's C-quoted path (`"foo bar.js"`, octal UTF-8 bytes). */
+function unquoteGitPath(raw) {
+  const s = String(raw || '').trim();
+  if (s.length < 2 || !s.startsWith('"') || !s.endsWith('"')) return s;
+  const inner = s.slice(1, -1);
+  const bytes = [];
+  for (let i = 0; i < inner.length; i++) {
+    const c = inner[i];
+    if (c === '\\' && i + 1 < inner.length) {
+      const n = inner[i + 1];
+      if (n >= '0' && n <= '7') {
+        let oct = n;
+        let j = i + 2;
+        for (let k = 0; k < 2 && j < inner.length && inner[j] >= '0' && inner[j] <= '7'; k += 1, j += 1) {
+          oct += inner[j];
+        }
+        bytes.push(parseInt(oct, 8));
+        i = j - 1;
+        continue;
+      }
+      const map = { n: 10, t: 9, r: 13, '\\': 92, '"': 34, a: 7, b: 8, f: 12, v: 11 };
+      if (map[n] != null) {
+        bytes.push(map[n]);
+        i += 1;
+        continue;
+      }
+    }
+    const cp = c.codePointAt(0);
+    if (cp < 128) bytes.push(cp);
+    else {
+      const enc = new TextEncoder().encode(c);
+      for (const b of enc) bytes.push(b);
+    }
+  }
+  try {
+    return new TextDecoder().decode(Uint8Array.from(bytes));
+  } catch {
+    return inner;
+  }
+}
+
+/**
+ * One canonical repo-relative id.
+ * Strips git quotes, `./`, and `..` so `services/../agents/a.js` and `./agents/a.js`
+ * both match the graph node `agents/a.js`.
+ */
+export function normalizeGraphId(id) {
+  let p = unquoteGitPath(id).replace(/\\/g, '/').trim();
+  if (p.startsWith('./')) p = p.slice(2);
+  const parts = [];
+  for (const seg of p.split('/')) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') {
+      parts.pop();
+      continue;
+    }
+    parts.push(seg);
+  }
+  return parts.join('/');
+}
+
+/** Index graph node ids for git-path lookup. */
+export function createNodeIdIndex(nodeIds) {
+  const byNorm = new Map();
+  const bySuffix = new Map();
+  const list = Array.isArray(nodeIds) ? nodeIds : [];
+  for (const id of list) {
+    const key = normalizeGraphId(id);
+    if (!key || byNorm.has(key)) continue;
+    byNorm.set(key, id);
+    if (!key.includes('/')) continue;
+    const parts = key.split('/');
+    for (let i = 1; i < parts.length - 1; i++) {
+      const suf = parts.slice(i).join('/');
+      if (!suf.includes('/')) continue;
+      let bucket = bySuffix.get(suf);
+      if (!bucket) bySuffix.set(suf, bucket = []);
+      bucket.push(id);
+    }
+  }
+  return { byNorm, bySuffix };
+}
+
+/**
+ * Map a git path onto a graph node id.
+ * Exact normalized match wins. A unique longer/shorter path (extra leading folder)
+ * matches only when both sides have a directory, so bare `index.js` never attaches
+ * to a random file of the same name.
+ */
+export function resolveChangedNodeId(graphId, index) {
+  const key = normalizeGraphId(graphId);
+  if (!key || !index) return null;
+  if (index.byNorm.has(key)) return index.byNorm.get(key);
+  if (!key.includes('/')) return null;
+  const hits = index.bySuffix.get(key);
+  if (hits?.length === 1) return hits[0];
+  if (hits?.length > 1) return null;
+  const reverse = [];
+  for (const [norm, id] of index.byNorm) {
+    if (norm.includes('/') && key.endsWith(`/${norm}`)) reverse.push(id);
+  }
+  if (reverse.length === 1) return reverse[0];
+  return null;
 }
 
 export function shortSha(value) {
