@@ -508,6 +508,9 @@ export class CodeGraphEngine extends React.Component {
     if (this.props.focusToken && this.props.focusToken !== prev.focusToken && this.props.focusNodeId) {
       this.select(this.props.focusNodeId);
     }
+    if (prev.viewActive !== this.props.viewActive) {
+      this.syncCaptureReady(!!this._captureReady);
+    }
     if (prev.sidebarOpen !== this.props.sidebarOpen) {
       this._legendDrawn = false;
       requestAnimationFrame(() => { this.resize(); this.kick(0.02); });
@@ -1296,8 +1299,21 @@ export class CodeGraphEngine extends React.Component {
       } else this._settle = 0;
     }
     if (this.dirty) { this.draw(); this.dirty = false; }
+    this.syncCaptureReady(settled && !this._needsFit && !!(this.nodes && this.nodes.length));
     if (!settled || this._needsFit) this._raf = requestAnimationFrame(this.tick);
   };
+
+  /** Screenshot hook: ready only after the layout has settled. Flow view sets the same attributes. */
+  syncCaptureReady(ready) {
+    if (ready === this._captureReady && this._captureOwner === (this.props.viewActive !== false)) return;
+    this._captureReady = ready;
+    this._captureOwner = this.props.viewActive !== false;
+    const cv = this.canvasRef?.current;
+    if (cv) cv.dataset.captureReady = ready ? '1' : '0';
+    if (this.props.viewActive === false || typeof document === 'undefined') return;
+    document.documentElement.dataset.explorerView = 'graph';
+    document.documentElement.dataset.explorerReady = ready ? '1' : '0';
+  }
 
   step() {
     const ns = this.active || this.nodes;

@@ -19,6 +19,7 @@ import {
 } from '../tools/git-changes.mjs';
 import { resolveCompareBase } from '../tools/pr-base.mjs';
 import { computeFocusView, decodeFocusQuery, normalizeFocusState } from '../client/src/focusView.js';
+import { buildFlowView } from '../tools/flow-model.mjs';
 import {
   checkoutBranch,
   checkoutWorkspace,
@@ -706,6 +707,53 @@ app.post('/api/focus', async (req, res) => {
     res.json(computeFocusView(graph, focusState));
   } catch (err) {
     console.error('[focus]', err);
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+const flowCache = new Map();
+
+app.get('/api/flow', async (req, res) => {
+  const root = req.query.root ? String(req.query.root) : state.root;
+  if (!root) return res.status(400).json({ error: 'Missing root' });
+  try {
+    const gitInfo = await buildGitChangesResponse(root, compareHintsFromQuery(req.query));
+    const { packages } = packagesForRoot(root);
+    const primaryRoot = packages.find((pkg) => path.resolve(pkg.root) === path.resolve(root))?.root || packages[0]?.root || root;
+    const baseRev = gitInfo.baseSha || (gitInfo.baseLabel ? resolveRev(primaryRoot, gitInfo.baseLabel) : null);
+    const merged = String(gitInfo.pr?.state || '').toUpperCase() === 'MERGED';
+    let mainRev = null;
+    if (merged) {
+      const mainName = resolveBaseBranch(primaryRoot);
+      mainRev = mainName ? resolveRev(primaryRoot, mainName) : null;
+    }
+    const changes = (gitInfo.files || [])
+      .filter((file) => CODE_EXT.has(path.extname(file.path || file.graphId || '')))
+      .map((file) => {
+        const prefix = file.prefix || '';
+        const pkg = packages.find((item) => (item.prefix || '') === prefix) || packages[0];
+        return { ...file, root: pkg?.root || primaryRoot };
+      });
+    const focusId = req.query.fn ? String(req.query.fn) : '';
+    const key = [root, gitInfo.headSha || '', baseRev || '', mainRev || '', focusId, changes.map((file) => `${file.graphId}:${file.status}`).join(',')].join('|');
+    const cached = flowCache.get(key);
+    if (cached) return res.json(cached);
+    const payload = buildFlowView({
+      root,
+      changes,
+      baseRev,
+      baseLabel: gitInfo.baseLabel,
+      headSha: gitInfo.headSha,
+      baseSha: gitInfo.baseSha,
+      merged,
+      mainRev,
+      focusId,
+    });
+    flowCache.set(key, payload);
+    if (flowCache.size > 12) flowCache.delete(flowCache.keys().next().value);
+    res.json(payload);
+  } catch (err) {
+    console.error('[flow]', err);
     res.status(500).json({ error: err.message || String(err) });
   }
 });

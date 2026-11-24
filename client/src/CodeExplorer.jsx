@@ -698,6 +698,16 @@ export class CodeExplorer extends CodeGraphEngine {
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 'var(--font-heading-weight)', fontSize: 15, wordBreak: 'break-word' }}>{sel.label}</div>
                 <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, color: 'var(--color-neutral-500)', marginTop: 'var(--space-1)', wordBreak: 'break-all' }}>{sel.path}</div>
+              {this.props.onShowInFlow && (
+                <button
+                  type="button"
+                  onClick={() => this.props.onShowInFlow(sel.path)}
+                  style={{
+                    marginTop: 6, padding: 0, border: 'none', background: 'none', cursor: 'pointer',
+                    color: '#9184d9', font: 'inherit', fontSize: 11,
+                  }}
+                >Show in flow</button>
+              )}
               </div>
               <button type="button" className="btn btn-icon btn-ghost" onClick={v.clearSel} style={{ flex: 'none' }}>✕</button>
             </div>

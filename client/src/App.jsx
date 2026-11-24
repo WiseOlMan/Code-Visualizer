@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CodeExplorer } from './CodeExplorer.jsx';
+import { FlowView } from './FlowView.jsx';
+import { readExplorerView, writeExplorerParams } from './explorerView.js';
 
 const SESSION_KEY = 'code-explorer-session';
 
@@ -147,6 +149,13 @@ export default function App() {
   const [branchBusy, setBranchBusy] = useState(false);
   const [branchError, setBranchError] = useState('');
   const [initialOnlyGit, setInitialOnlyGit] = useState(false);
+  const [explorerView, setExplorerViewState] = useState(readExplorerView);
+  const [flowJump, setFlowJump] = useState(null);
+
+  function setExplorerView(next) {
+    setExplorerViewState(next);
+    writeExplorerParams({ view: next });
+  }
 
   const tabsRef = useRef([]);
   const analyzingTabIdRef = useRef(null);
@@ -578,10 +587,38 @@ export default function App() {
     <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh', overflow: 'hidden' }}>
       {tabs.length > 0 && (
         <div style={{
-          flex: 'none', display: 'flex', alignItems: 'stretch',
+          flex: 'none', display: 'flex', alignItems: 'stretch', position: 'relative',
           borderBottom: '1px solid var(--color-neutral-900)', background: 'var(--color-bg)',
           minHeight: 40,
         }}>
+          <div style={{
+            position: 'absolute', left: '50%', top: 0, height: '100%', transform: 'translateX(-50%)',
+            display: 'flex', alignItems: 'center', zIndex: 2, pointerEvents: 'none',
+          }}>
+            <div role="tablist" aria-label="Explorer view" style={{
+              display: 'flex', pointerEvents: 'auto',
+              border: '1px solid #3f424d', borderRadius: 999, overflow: 'hidden', background: '#161826',
+            }}>
+              {['graph', 'flow'].map((id) => {
+                const on = explorerView === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={on}
+                    onClick={() => setExplorerView(id)}
+                    style={{
+                      border: 'none', cursor: 'pointer', font: 'inherit', fontSize: 12,
+                      padding: '5px 12px',
+                      background: on ? '#2a2740' : 'transparent',
+                      color: on ? '#f5f4ff' : '#b2b6ca',
+                    }}
+                  >{id === 'graph' ? 'Graph' : 'Flow'}</button>
+                );
+              })}
+            </div>
+          </div>
           <div style={{ flex: 1, display: 'flex', alignItems: 'stretch', minWidth: 0, overflowX: 'auto' }}>
             {tabs.map((tab) => {
               const on = tab.id === activeId;
@@ -758,8 +795,8 @@ export default function App() {
               style={{
                 position: 'absolute', inset: 0,
                 // Keep layout size while inactive — display:none zeros the canvas and breaks the graph.
-                visibility: on ? 'visible' : 'hidden',
-                pointerEvents: on ? 'auto' : 'none',
+                visibility: on && explorerView === 'graph' ? 'visible' : 'hidden',
+                pointerEvents: on && explorerView === 'graph' ? 'auto' : 'none',
                 zIndex: on ? 1 : 0,
               }}
               aria-hidden={!on}
@@ -788,10 +825,29 @@ export default function App() {
                 }}
                 focusNodeId={on ? focusRequest?.nodeId : null}
                 focusToken={on ? focusRequest?.token : null}
+                viewActive={on && explorerView === 'graph'}
+                onShowInFlow={on ? (file) => {
+                  setFlowJump({ file, token: Date.now() });
+                  setExplorerView('flow');
+                } : undefined}
               />
             </div>
           );
         })}
+        {explorerView === 'flow' && activeTab && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 2 }}>
+            <FlowView
+              root={activeTab.root}
+              gitInfo={activeTab.gitInfo || null}
+              focusFile={flowJump?.file || ''}
+              focusToken={flowJump?.token || 0}
+              onShowInGraph={(file) => {
+                setExplorerView('graph');
+                setFocusRequest({ nodeId: file, token: Date.now() });
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {(busy || progress) && !showPicker && activeTab && (
