@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prepareWorkspace } from './workspace.mjs';
+import { analyzeModules } from './functions.mjs';
 
 const CODE_EXT = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs']);
 const SKIP_DIRS = new Set([
@@ -94,6 +95,13 @@ function walk(dir, root, out = [], { skipTopLevel = new Set(), prefix = '' } = {
     }
   }
   return out;
+}
+
+export function listRepoSources(repoPathOrWorkspace) {
+  const workspace = repoPathOrWorkspace && typeof repoPathOrWorkspace === 'object' && repoPathOrWorkspace.root
+    ? repoPathOrWorkspace
+    : prepareWorkspace(repoPathOrWorkspace);
+  return collectFiles(workspace).map((file) => ({ file: file.rel, abs: file.abs }));
 }
 
 function collectFiles(workspace) {
@@ -916,6 +924,8 @@ export function* extractGraphStream(repoPathOrWorkspace, { outDir, batchSize = 3
       continue;
     }
     contents.set(f.rel, src);
+    const node = nodesById.get(f.rel);
+    if (node) node.lines = src ? src.split('\n').length : 0;
     const code = stripComments(src);
     for (const ref of extractImportRefs(code)) {
       const target =
@@ -1095,10 +1105,20 @@ export function* extractGraphStream(repoPathOrWorkspace, { outDir, batchSize = 3
 
   const hops = extractHops({ files, contents, fileIndex, nodesById, linkMap });
 
+  let fnModel = { functions: [], calls: [] };
+  try {
+    fnModel = analyzeModules([...contents.entries()].map(([file, source]) => ({ file, source })));
+  } catch (err) {
+    console.error('[functions]', err);
+  }
+
   const graph = {
     repo: repoName,
     nodes: [...nodesById.values()],
     links: [...linkMap.values()],
+    // File graph draw ignores these. Flow view reads them.
+    functions: fnModel.functions.map(({ body, ...fn }) => fn),
+    fnCalls: fnModel.calls,
   };
   const allCalls = [...callMap.values()];
   const endpointData = {
@@ -1124,6 +1144,8 @@ export function* extractGraphStream(repoPathOrWorkspace, { outDir, batchSize = 3
       endpoints: endpoints.length,
       calls: logicalCalls,
       hops: hops.length,
+      functions: fnModel.functions.length,
+      fnCalls: fnModel.calls.length,
       sdkMethods: sdkMethods.size,
     },
   };
@@ -1188,7 +1210,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     }
     const result = extractGraph(workspace, { outDir });
     console.log(
-      `Wrote ${outDir}\n  ${result.stats.nodes} files · ${result.stats.links} imports · ${result.stats.endpoints} endpoints · ${result.stats.calls} calls · ${result.stats.hops} hops`,
+      `Wrote ${outDir}\n  ${result.stats.nodes} files · ${result.stats.links} imports · ${result.stats.endpoints} endpoints · ${result.stats.calls} calls · ${result.stats.hops} hops · ${result.stats.functions || 0} functions`,
     );
   } catch (err) {
     console.error(err.message || err);

@@ -9,3 +9,4 @@ data/workspaces/
 .tmp/
 .cache/
 .vite/
+fixtures/flow-demo/repo/
