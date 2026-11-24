@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CodeExplorer } from './CodeExplorer.jsx';
+import { FlowView } from './FlowView.jsx';
+import { readExplorerView, writeExplorerParams } from './explorerView.js';
 import { classifyCompareResult, publishGraphReadiness, resolveGraphReadiness } from './graphReadiness.js';
 
 const SESSION_KEY = 'code-explorer-session';
@@ -99,10 +101,13 @@ async function fetchWorkspace(root) {
   return res.json();
 }
 
-async function fetchGitChanges(root) {
+async function fetchGitChanges(root, { pr, base } = {}) {
   if (!root) return { ok: false, error: 'No workspace root' };
   try {
-    const res = await fetch(`/api/git/changes?root=${encodeURIComponent(root)}`);
+    const qs = new URLSearchParams({ root });
+    if (pr) qs.set('pr', pr);
+    else if (base) qs.set('base', base);
+    const res = await fetch(`/api/git/changes?${qs}`);
     const data = await res.json().catch(() => null);
     return {
       ok: res.ok,
@@ -124,6 +129,12 @@ function gitInfoSig(info) {
     missing: info.missingFromGraph || [],
     files: (info.files || []).map((f) => [f.graphId, f.status, !!f.uncommitted]),
     heads: (info.stalePackages || []).map((p) => p.currentHead || ''),
+    base: info.baseLabel || info.base || null,
+    head: info.headShort || null,
+    baseSha: info.baseShort || null,
+    baseSource: info.baseSource || null,
+    baseNote: info.baseNote || null,
+    pr: info.pr?.number || null,
   });
 }
 
@@ -146,7 +157,16 @@ export default function App() {
   const [branchBusy, setBranchBusy] = useState(false);
   const [branchError, setBranchError] = useState('');
   const [initialOnlyGit, setInitialOnlyGit] = useState(false);
-  const [drawnEpoch, setDrawnEpoch] = useState('');
+  const [graphDrawnEpoch, setGraphDrawnEpoch] = useState('');
+  const [flowDrawnEpoch, setFlowDrawnEpoch] = useState('');
+  const [explorerView, setExplorerViewState] = useState(readExplorerView);
+  const [flowJump, setFlowJump] = useState(null);
+  const [graphApi, setGraphApi] = useState(null);
+
+  function setExplorerView(next) {
+    setExplorerViewState(next);
+    writeExplorerParams({ view: next });
+  }
 
   const tabsRef = useRef([]);
   const analyzingTabIdRef = useRef(null);
@@ -321,23 +341,33 @@ export default function App() {
   }, []);
 
   function patchTab(id, patch) {
-    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    setTabs((prev) => {
+      const next = prev.map((t) => (t.id === id ? { ...t, ...patch } : t));
+      tabsRef.current = next;
+      return next;
+    });
   }
 
   const refreshGit = useCallback(async (tabId, root) => {
     if (!tabId || !root) return;
-    const result = await fetchGitChanges(root);
-    const classified = classifyCompareResult(result);
     const tab = tabsRef.current.find((t) => t.id === tabId);
+    const pr = tab?.comparePr || '';
+    const base = tab?.compareBase || '';
+    const result = await fetchGitChanges(root, { pr, base });
+    const current = tabsRef.current.find((t) => t.id === tabId);
+    // A newer paste can land while this request is in flight — drop the stale one.
+    if ((current?.comparePr || '') !== pr) return;
+    if ((current?.compareBase || '') !== base) return;
+    const classified = classifyCompareResult(result);
     if (classified.phase === 'ok') {
       const gitInfo = result.data;
       // Avoid re-rendering / re-laying-out the graph when nothing git-related changed.
-      if (tab && gitInfoSig(tab.gitInfo) === gitInfoSig(gitInfo) && tab.comparePhase === 'ok') return;
+      if (current && gitInfoSig(current.gitInfo) === gitInfoSig(gitInfo) && current.comparePhase === 'ok') return;
       patchTab(tabId, { gitInfo, comparePhase: 'ok', compareReason: null });
       return;
     }
     // A later poll must not wipe a compare the graph already drew.
-    if (tab?.comparePhase === 'ok') return;
+    if (current?.comparePhase === 'ok') return;
     patchTab(tabId, { comparePhase: classified.phase, compareReason: classified.reason });
   }, []);
 
@@ -346,7 +376,7 @@ export default function App() {
     refreshGit(activeTab.id, activeTab.root);
     const t = setInterval(() => refreshGit(activeTab.id, activeTab.root), 15_000);
     return () => clearInterval(t);
-  }, [activeTab?.id, activeTab?.root, activeTab?.busy, activeTab?.reloadToken, refreshGit]);
+  }, [activeTab?.id, activeTab?.root, activeTab?.busy, activeTab?.reloadToken, activeTab?.comparePr, activeTab?.compareBase, refreshGit]);
 
   // Re-analyze when HEAD moved or graph-missing files appear. Source edits use a
   // fingerprint so we don't loop on mtime noise after every analyze.
@@ -488,6 +518,14 @@ export default function App() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) throw new Error(data.error || `Checkout failed (${res.status})`);
+      // A pasted PR belongs to the branch we just left.
+      if (data.root) {
+        setTabs((prev) => {
+          const next = prev.map((t) => (t.root === data.root ? { ...t, comparePr: '' } : t));
+          tabsRef.current = next;
+          return next;
+        });
+      }
       // Same root refreshes the active tab; another repo opens/reuses a tab via analyze.
       await analyze(data.root);
       return true;
@@ -558,9 +596,11 @@ export default function App() {
   const comparePhase = activeTab?.comparePhase || (needsCompare ? 'pending' : 'idle');
   const graphSettled = !!(activeTab?.liveGraph?.graph) && !activeTab.busy;
   const layoutEpoch = graphSettled && (graphNodes?.length || 0) > 0 && (!needsCompare || comparePhase === 'ok')
-    ? `${activeTab.id}:${activeTab.reloadToken}:${gitInfoSig(activeTab.gitInfo)}:${comparePhase}`
+    ? `${activeTab.id}:${activeTab.reloadToken}:${gitInfoSig(activeTab.gitInfo)}:${comparePhase}:${explorerView}`
     : '';
-  const frameDrawn = !!layoutEpoch && drawnEpoch === layoutEpoch;
+  const frameDrawn = explorerView === 'flow'
+    ? !!layoutEpoch && flowDrawnEpoch === layoutEpoch
+    : !!layoutEpoch && graphDrawnEpoch === layoutEpoch;
   const readiness = useMemo(() => resolveGraphReadiness({
     booted,
     hasGraph: !!(activeTab?.liveGraph?.graph),
@@ -604,165 +644,22 @@ export default function App() {
     );
   }
 
+  const menu = {
+    query: searchQuery,
+    onQuery: setSearchQuery,
+    scope: searchScope,
+    onToggleScope: () => setSearchScope((s) => (s === 'repo' ? 'all' : 'repo')),
+    hits: allSearchHits,
+    onPick: pickSearchHit,
+    onOpenRepo: openPicker,
+    tabs,
+    activeId,
+    onActivate: setActiveId,
+    onClose: closeTab,
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      {tabs.length > 0 && (
-        <div style={{
-          flex: 'none', display: 'flex', alignItems: 'stretch',
-          borderBottom: '1px solid var(--color-neutral-900)', background: 'var(--color-bg)',
-          minHeight: 40,
-        }}>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'stretch', minWidth: 0, overflowX: 'auto' }}>
-            {tabs.map((tab) => {
-              const on = tab.id === activeId;
-              return (
-                <div
-                  key={tab.id}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '0 4px 0 12px',
-                    borderRight: '1px solid var(--color-neutral-900)',
-                    background: on ? 'var(--color-surface)' : 'transparent',
-                    maxWidth: 220, minWidth: 96,
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setActiveId(tab.id)}
-                    style={{
-                      flex: 1, minWidth: 0, border: 'none', background: 'transparent',
-                      color: on ? 'var(--color-text)' : 'var(--color-neutral-500)',
-                      fontFamily: 'inherit', fontSize: 12, textAlign: 'left',
-                      padding: '8px 0', cursor: 'pointer',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}
-                    title={tab.root || tab.title}
-                  >
-                    {tab.title}{tab.busy ? '…' : ''}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-icon btn-ghost"
-                    title="Close tab"
-                    aria-label={`Close ${tab.title}`}
-                    onClick={() => closeTab(tab.id)}
-                    style={{ width: 28, height: 28, flex: 'none', fontSize: 12, color: 'var(--color-neutral-600)' }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              );
-            })}
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={openPicker}
-              title="Open another repo"
-              aria-label="Open another repo"
-              style={{
-                flex: 'none', width: 36, padding: 0, border: 'none',
-                borderRight: '1px solid var(--color-neutral-900)',
-                color: 'var(--color-neutral-400)', fontSize: 18, lineHeight: 1,
-              }}
-            >
-              +
-            </button>
-          </div>
-
-          <div ref={searchWrapRef} style={{
-            flex: 'none', display: 'flex', alignItems: 'center',
-            borderLeft: '1px solid var(--color-neutral-900)',
-            position: 'relative', padding: '0 6px',
-          }}>
-            {searchOpen ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: 300 }}>
-                <input
-                  className="input"
-                  autoFocus
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={searchScope === 'all' ? 'Search all repos…' : 'Search this repo…'}
-                  style={{ flex: 1, minWidth: 0, fontSize: 12, padding: '5px 8px', minHeight: 30 }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') {
-                      setSearchOpen(false);
-                      setSearchQuery('');
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  title={searchScope === 'all' ? 'Searching all open repos' : 'Searching this repo'}
-                  onClick={() => setSearchScope((s) => (s === 'repo' ? 'all' : 'repo'))}
-                  style={{
-                    flex: 'none', fontSize: 10, padding: '4px 7px', whiteSpace: 'nowrap',
-                    border: '1px solid',
-                    color: searchScope === 'all' ? 'var(--color-accent-300)' : 'var(--color-neutral-500)',
-                    borderColor: searchScope === 'all' ? 'var(--color-accent-700)' : 'var(--color-neutral-800)',
-                  }}
-                >
-                  {searchScope === 'all' ? 'All' : 'Repo'}
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-icon btn-ghost"
-                title="Search"
-                aria-label="Search"
-                onClick={() => setSearchOpen(true)}
-                style={{
-                  width: 34, height: 34,
-                  color: searchQuery ? 'var(--color-accent-300)' : 'var(--color-neutral-400)',
-                }}
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
-              </button>
-            )}
-
-            {searchOpen && searchScope === 'all' && searchQuery.trim() && (
-              <div style={{
-                position: 'absolute', top: '100%', right: 0, zIndex: 30, width: 320,
-                marginTop: 4, maxHeight: 320, overflowY: 'auto',
-                background: 'var(--color-surface)', border: '1px solid var(--color-neutral-800)',
-                borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)',
-              }}>
-                {allSearchHits.length === 0 ? (
-                  <div style={{ padding: 10, fontSize: 12, color: 'var(--color-neutral-500)' }}>No matches</div>
-                ) : allSearchHits.map((hit) => (
-                  <button
-                    key={hit.key}
-                    type="button"
-                    onClick={() => pickSearchHit(hit)}
-                    style={{
-                      display: 'flex', flexDirection: 'column', gap: 2, width: '100%',
-                      textAlign: 'left', padding: '8px 10px', border: 'none',
-                      borderBottom: '1px solid var(--color-neutral-900)',
-                      background: 'transparent', color: 'inherit', cursor: 'pointer',
-                      fontFamily: 'inherit',
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-bg)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <span style={{ fontSize: 12 }}>{hit.label}</span>
-                    <span style={{
-                      fontSize: 10.5, color: 'var(--color-neutral-500)',
-                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {hit.repo} · {hit.path}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh', overflow: 'hidden', background: '#161826' }}>
 
       <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
         {tabs.length === 0 && !showPicker && (
@@ -788,8 +685,8 @@ export default function App() {
               style={{
                 position: 'absolute', inset: 0,
                 // Keep layout size while inactive — display:none zeros the canvas and breaks the graph.
-                visibility: on ? 'visible' : 'hidden',
-                pointerEvents: on ? 'auto' : 'none',
+                visibility: on && explorerView === 'graph' ? 'visible' : 'hidden',
+                pointerEvents: on && explorerView === 'graph' ? 'auto' : 'none',
                 zIndex: on ? 1 : 0,
               }}
               aria-hidden={!on}
@@ -808,6 +705,7 @@ export default function App() {
                 onSwitchBranch={on ? switchBranch : undefined}
                 branchBusy={branchBusy}
                 branchError={on ? branchError : ''}
+                comparePr={tab.comparePr || ''}
                 query={on ? explorerQuery : ''}
                 onQueryChange={(q) => {
                   setSearchScope('repo');
@@ -815,15 +713,61 @@ export default function App() {
                 }}
                 focusNodeId={on ? focusRequest?.nodeId : null}
                 focusToken={on ? focusRequest?.token : null}
-                layoutEpoch={on ? layoutEpoch : ''}
-                onLayoutFrame={on ? (epoch) => {
-                  setDrawnEpoch((cur) => (cur === epoch ? cur : epoch));
+                focusPanel={on ? focusRequest?.panel : null}
+                viewActive={on && explorerView === 'graph'}
+                onView={setExplorerView}
+                menu={menu}
+                onGraphApi={on ? setGraphApi : undefined}
+                onShowInFlow={on ? (file) => {
+                  setFlowJump({ file, token: Date.now() });
+                  setExplorerView('flow');
                 } : undefined}
-                captureBanner={on ? readiness.banner : ''}
+                layoutEpoch={on && explorerView === 'graph' ? layoutEpoch : ''}
+                onLayoutFrame={on && explorerView === 'graph' ? (epoch) => {
+                  setGraphDrawnEpoch((cur) => (cur === epoch ? cur : epoch));
+                } : undefined}
+                captureBanner={on && explorerView === 'graph' ? readiness.banner : ''}
+                onComparePr={(value) => patchTab(tab.id, {
+                  comparePr: String(value || '').trim(),
+                  comparePhase: 'pending',
+                  compareReason: null,
+                })}
+                onCompareBase={on ? (base) => patchTab(tab.id, {
+                  compareBase: String(base || '').trim(),
+                  comparePhase: 'pending',
+                  compareReason: null,
+                }) : undefined}
               />
             </div>
           );
         })}
+        {explorerView === 'flow' && activeTab && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 2 }}>
+            <FlowView
+              root={activeTab.root}
+              gitInfo={activeTab.gitInfo || null}
+              repo={activeTab.title}
+              focusFile={flowJump?.file || ''}
+              focusToken={flowJump?.token || 0}
+              onView={setExplorerView}
+              menu={menu}
+              graphApi={graphApi}
+              layoutEpoch={layoutEpoch}
+              onLayoutSettled={(epoch) => {
+                setFlowDrawnEpoch((cur) => (cur === epoch ? cur : epoch));
+              }}
+              captureBanner={readiness.banner}
+              onShowInGraph={(file) => {
+                setExplorerView('graph');
+                setFocusRequest({ nodeId: file, token: Date.now() });
+              }}
+              onOpenSource={(file) => {
+                setExplorerView('graph');
+                setFocusRequest({ nodeId: file, token: Date.now(), panel: 'source' });
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {(busy || progress) && !showPicker && activeTab && (

@@ -9,7 +9,9 @@ Interactive force-graph explorer for JavaScript / TypeScript codebases. Browse i
 - **Tabs** — open multiple repos and switch between them (restored on refresh)  
 - **Search** — magnifying glass (top-right of the tab row); this repo by default, or all open repos  
 - **Sidebar** — filters + legend; toggle from the panel icon at the top-left of the graph  
-- **Branch changes** — green fill = added, green ring = edited, red = deleted (vs `main`/`master`); “Changed files only” keeps folder layout; Source panel shows line diffs; auto-refreshes when dirty sources change after analyze  
+- **Branch changes** — green fill = added, green ring = edited, red = deleted. The diff uses the open GitHub pull request’s base when this branch has one (so stacked PRs are not compared to `main`), otherwise `main`/`master`/`develop`. Paste a PR URL or `#N` under **Compare to** to pin that PR’s base. “Changed files only” keeps folder layout; Source panel shows line diffs; auto-refreshes when dirty sources change after analyze  
+- **Focus** — “Hide the rest” keeps N import hops around the changed files (1 hop) or 2–4 hand-picked seeds (2 hops). Direction is in, out, or both, and edges draw arrowheads. Pin a file to keep it visible; it shows ✅ untouched or ⚠️ touched. Hide tests is on by default. The view is stored in the URL, **Copy focus JSON** repeats it, and `POST /api/focus` returns the same neighborhood for a later screenshot. Clear focus restores the full graph  
+- **Flow** — header switch **Graph | Flow** (`?view=flow`). Flow lays changed functions out in call order: numbered steps, file cards, and a click-to-explain panel. Dashed green arrows are new calls, dotted arrows are queue hops (`enqueueJob('name')`), and data arrows link a write to a later read. Deleted functions stay as faded ghosts; a body that matches a removal is tagged moved instead of added. Several entry points use **Flow 1 of N**. More than 12 function boxes or 4 columns opens the changed-function list. Open PRs switch **main | this PR**; merged PRs switch **before | this PR | main now**
 - **Switch branch** — paste a branch name to check it out in the current repo, or `owner/repo@branch` / a GitHub tree URL to open that repo (new tab) on that branch  
 
 Click a node for imports, callers, symbols, and source.
@@ -49,7 +51,7 @@ code-explorer serve --repo "$PWD"
 That serves the UI and API on one port (default `8787`, or the next free port) and opens the current repo in **Changed files only**. Leave the process running so you can click around — including after taking over a cloud agent desktop.
 
 ```text
-code-explorer serve [--repo <path>] [--port <n>] [--all-files] [--open]
+code-explorer serve [--repo <path>] [--port <n>] [--all-files] [--open] [--base <branch>] [--pr <number|url>]
 code-explorer analyze <repo> [--out <dir>]
 ```
 
@@ -78,7 +80,7 @@ A Cursor plugin skill in this repo tells agents to prefer PATH, then `npx`, and 
 
 ## Headless screenshots
 
-Cloud agents screenshot the live UI. The canvas stays blank if the shot is taken before the git compare lands ("Changed files only" hides every node, and the `vs main` line is missing). The page publishes a readiness hook once the graph data **and** the compare have loaded **and** the layout has drawn a frame.
+Cloud agents screenshot the live UI. The canvas stays blank if the shot is taken before the git compare lands. The page publishes one readiness hook for Graph and Flow once the graph data **and** the compare have loaded **and** the active view's layout has settled.
 
 On `#root`:
 

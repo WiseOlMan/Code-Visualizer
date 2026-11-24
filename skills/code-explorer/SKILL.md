@@ -31,10 +31,11 @@ The process prints a `ui` URL (API + viewer on one port). Leave it running. Do *
 
 ## Screenshot change impact
 
-1. Open the printed URL.
-2. Wait until analyze finishes and the page is ready to capture. Do not shoot while the canvas is still settling:
+1. Open the printed URL. Graph and Flow share one readiness hook.
+2. Wait until analyze finishes and the active view has settled. Do not shoot while the canvas is still moving:
    - `#root` has `data-graph-ready="true"` (same signal: `window.__codeVizReady === true`).
    - `window.__codeVizStatus` is `{ ready, state, reason }`.
+   - Ready means the git compare has loaded and the active view's layout has settled (Graph forces cooled, or Flow measured and painted).
    - If `data-graph-state` is `compare-error` or `empty`, stop. The canvas shows `Compare not loaded: <reason>` or `No files in graph`. Report that text. Do not attach the image.
 3. Prefer the waiter. It exits non-zero and writes no file unless the hook is ready:
 
@@ -44,7 +45,7 @@ code-explorer screenshot --url http://localhost:8787 --out /tmp/code-explorer.pn
 
 Use the same binary you served with (`node "$HOME/code-explorer/cli.mjs" screenshot …` when that is how you started it). `--timeout <ms>` defaults to 45000.
 
-4. Confirm the sidebar shows **Changed files only** when the branch has edits (branch colors on) and the compare line includes `vs main` (or that repo's base). If the diff is empty, the UI falls back to the full graph and the compare line still names the base.
+4. Confirm the compare line includes `vs main` (or that repo's base). **Compare to** uses the open pull request’s base branch when GitHub can resolve one; otherwise it uses `main`/`master`. Paste a PR URL or `#N`, or start with `code-explorer serve --pr <number|url>`, to pin a stacked base. If the diff is empty, the UI falls back to the full graph and the compare line still names the base.
 5. Leave the server up so the user can take over the cloud desktop and click around.
 
 `--all-files` starts on the full graph. Humans can toggle **Changed files only** / **All files** in the sidebar.

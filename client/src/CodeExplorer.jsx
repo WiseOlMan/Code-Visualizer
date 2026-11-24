@@ -1,5 +1,7 @@
 import React from 'react';
 import { CodeGraphEngine } from './codeGraphLogic.js';
+import { ExplorerChrome } from './ExplorerChrome.jsx';
+import './explorer.css';
 
 function LinkBtn({ onClick, children }) {
   return (
@@ -21,17 +23,224 @@ function LinkBtn({ onClick, children }) {
 }
 
 /** Left-panel toggle: filled rail when open (collapse), outline rail when closed (expand). */
-function SidebarIcon({ open }) {
+function FileGlyph() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <rect x="2.5" y="3" width="13" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M7 3.5v11" stroke="currentColor" strokeWidth="1.4" />
-      {open ? (
-        <rect x="3.2" y="3.8" width="3.2" height="10.4" fill="currentColor" opacity="0.85" />
-      ) : (
-        <path d="M9.5 9h4M11.75 7.25L13.5 9l-1.75 1.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-      )}
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style={{ flex: 'none' }}>
+      <path d="M2.5 1.5h4L9.5 4.5V10.5h-7z" stroke="#d2cefd" fill="none" strokeWidth="1" />
+      <path d="M6.5 1.6V4.4H9.4" stroke="#d2cefd" fill="none" strokeWidth="1" />
     </svg>
+  );
+}
+
+function RadioDot({ on }) {
+  return (
+    <span style={{
+      width: 12, height: 12, borderRadius: 99, flex: 'none', boxSizing: 'border-box',
+      border: `1.5px solid ${on ? '#9184d9' : '#75798c'}`,
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      {on && <span style={{ width: 6, height: 6, borderRadius: 99, background: '#9184d9' }} />}
+    </span>
+  );
+}
+
+function Switch({ on }) {
+  return (
+    <span aria-hidden="true" style={{
+      width: 30, height: 16, borderRadius: 99, flex: 'none', position: 'relative',
+      background: on ? '#9184d9' : '#3f424d',
+    }}>
+      <span style={{
+        position: 'absolute', top: 2, left: on ? 14 : 2, width: 12, height: 12,
+        borderRadius: 99, background: '#f3f5fe',
+      }} />
+    </span>
+  );
+}
+
+function SegButton({ on, children, onClick, label }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      aria-label={label}
+      onClick={onClick}
+      style={{
+        minWidth: 28, padding: '4px 8px', borderRadius: 8, cursor: 'pointer',
+        font: 'inherit', fontSize: 12,
+        border: `1px solid ${on ? '#9184d9' : '#3f424d'}`,
+        background: on ? '#423a6a' : 'transparent',
+        color: on ? '#f5f4ff' : '#b2b6ca',
+      }}
+    >{children}</button>
+  );
+}
+
+function FocusChip({ label, badge, onRemove }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: '100%',
+      padding: '3px 6px', borderRadius: 8,
+      background: '#2b2741', border: '1px solid #5d5294',
+      fontSize: 11, color: '#e9e9ed',
+    }}>
+      <FileGlyph />
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      {badge === 'untouched' && <span title="untouched">✅</span>}
+      {badge === 'touched' && <span title="touched">⚠️</span>}
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove ${label}`}
+          style={{ border: 'none', background: 'none', color: '#b2b6ca', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1 }}
+        >×</button>
+      )}
+    </span>
+  );
+}
+
+function FocusCard({ v }) {
+  const row = {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+    width: '100%', padding: 0, border: 'none', background: 'none', color: 'inherit',
+    font: 'inherit', fontSize: 12, cursor: 'pointer', textAlign: 'left',
+  };
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 10,
+      padding: 'var(--space-4)', borderRadius: 'var(--radius-md)',
+      background: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)',
+    }}>
+      <div style={{ fontSize: 12, letterSpacing: '0.04em', color: 'var(--color-neutral-300)' }}>Focus</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {v.focusSeedChips.map((chip) => (
+          <FocusChip
+            key={chip.id}
+            label={chip.label}
+            onRemove={chip.removable ? () => v.removeFocusSeed(chip.id) : null}
+          />
+        ))}
+        {v.focusSeedMore > 0 && (
+          <span style={{ fontSize: 11, color: 'var(--color-neutral-500)', alignSelf: 'center' }}>+{v.focusSeedMore}</span>
+        )}
+      </div>
+      {v.focusSeedMode === 'picked' && v.focusSeeds.length < 2 && (
+        <div style={{ fontSize: 10.5, color: '#e6c07b' }}>Pick 2–4 files</div>
+      )}
+      <button
+        type="button"
+        onClick={() => v.openFocusPick('seed')}
+        style={{ ...row, color: '#d2cefd', justifyContent: 'flex-start', gap: 6 }}
+      >
+        + add seed
+      </button>
+      {v.focusPick === 'seed' && (
+        <FocusSearch v={v} placeholder="Search files to seed" />
+      )}
+      <button type="button" onClick={v.useChangedSeeds} style={row} aria-pressed={v.focusSeedMode === 'changed'}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <RadioDot on={v.focusSeedMode === 'changed'} />
+          <span><span style={{ color: 'var(--color-neutral-500)' }}>or · </span>Seed = changed files</span>
+        </span>
+      </button>
+      {v.focusSeeds.length >= 2 && (
+        <button type="button" onClick={v.usePickedSeeds} style={row} aria-pressed={v.focusSeedMode === 'picked'}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <RadioDot on={v.focusSeedMode === 'picked'} />
+            Hand-picked seeds
+          </span>
+        </button>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ fontSize: 12, color: 'var(--color-neutral-400)' }}>Hops</span>
+        <span style={{ display: 'inline-flex', gap: 4 }}>
+          {[1, 2, 3].map((n) => (
+            <SegButton key={n} on={v.focusHops === n} label={`${n} hop${n === 1 ? '' : 's'}`} onClick={() => v.setFocusHops(n)}>{n}</SegButton>
+          ))}
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ fontSize: 12, color: 'var(--color-neutral-400)' }}>Direction</span>
+        <span style={{ display: 'inline-flex', gap: 4 }}>
+          {['in', 'out', 'both'].map((dir) => (
+            <SegButton key={dir} on={v.focusDir === dir} label={`Direction ${dir}`} onClick={() => v.setFocusDir(dir)}>{dir}</SegButton>
+          ))}
+        </span>
+      </div>
+
+      <div style={{ fontSize: 12, color: 'var(--color-neutral-400)' }}>Watch</div>
+      {!!v.focusPinChips.length && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {v.focusPinChips.map((chip) => (
+            <FocusChip
+              key={chip.id}
+              label={chip.label}
+              badge={chip.badge}
+              onRemove={() => v.removeFocusPin(chip.id)}
+            />
+          ))}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => v.openFocusPick('pin')}
+        style={{ ...row, color: '#d2cefd', justifyContent: 'flex-start', gap: 6 }}
+      >
+        + pin file
+      </button>
+      {v.focusPick === 'pin' && (
+        <FocusSearch v={v} placeholder="Search files to pin" />
+      )}
+
+      <button type="button" onClick={v.toggleFocusTests} role="switch" aria-checked={v.focusHideTests} style={row}>
+        <span>Hide tests</span>
+        <Switch on={v.focusHideTests} />
+      </button>
+      <button type="button" onClick={v.toggleFocus} role="switch" aria-checked={v.focusOn} style={row}>
+        <span>Hide the rest</span>
+        <Switch on={v.focusOn} />
+      </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+        <button type="button" className="btn btn-ghost" onClick={v.copyFocusJson} style={{ fontSize: 11, padding: '4px 0' }}>
+          {v.focusCopied || 'Copy focus JSON'}
+        </button>
+        {v.focusOn && (
+          <button type="button" className="btn btn-ghost" onClick={v.clearFocus} style={{ fontSize: 11, padding: '4px 0' }}>
+            Clear focus
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FocusSearch({ v, placeholder }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <input
+        className="input"
+        autoFocus
+        value={v.focusQuery}
+        onChange={v.onFocusQuery}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        style={{ fontSize: 11, padding: '5px 8px', minHeight: 28 }}
+      />
+      {v.focusMatches.map((hit) => (
+        <button
+          key={hit.id}
+          type="button"
+          onClick={() => v.pickFocusMatch(hit.id)}
+          style={{
+            textAlign: 'left', fontSize: 11, padding: '4px 6px', cursor: 'pointer',
+            border: '1px solid transparent', borderRadius: 6, background: 'transparent',
+            color: 'var(--color-text)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          }}
+        >{hit.label}</button>
+      ))}
+    </div>
   );
 }
 
@@ -41,253 +250,48 @@ export class CodeExplorer extends CodeGraphEngine {
     const sel = v.sel;
 
     return (
-      <div style={{
-        display: 'flex', width: '100%', height: '100%', overflow: 'hidden',
-        background: 'var(--color-bg)', color: 'var(--color-text)', fontFamily: 'var(--font-body)',
-      }}>
-        {v.sidebarOpen && (
-          <aside style={{
-            flex: 'none', width: 266, display: 'flex', flexDirection: 'column', gap: 'var(--space-6)',
-            padding: 'var(--space-6)', boxSizing: 'border-box',
-            borderRight: '1px solid var(--color-neutral-900)', overflowY: 'auto',
-          }}>
-            <div>
-              <div style={{
-                fontFamily: 'var(--font-heading)', fontWeight: 'var(--font-heading-weight)',
-                fontSize: 17, letterSpacing: '-0.01em',
-              }}>{v.repoName}</div>
-              <div style={{ fontSize: 12, color: 'var(--color-neutral-500)', marginTop: 'var(--space-1)' }}>
-                {v.statLine}
-              </div>
-              {v.gitSummary && (
-                <div style={{ fontSize: 11, color: 'var(--color-accent-300)', marginTop: 'var(--space-2)', lineHeight: 1.4 }}>
-                  {v.gitSummary}
-                </div>
-              )}
-              <form
-                onSubmit={(e) => { e.preventDefault(); v.submitBranch(); }}
-                style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 'var(--space-3)' }}
-              >
-                <input
-                  className="input"
-                  value={v.branchInput}
-                  onChange={v.onBranchInput}
-                  disabled={v.branchBusy}
-                  placeholder="Paste branch or org/repo@branch"
-                  title="Branch name for this repo, or owner/repo@branch / GitHub tree URL for another"
-                  style={{ width: '100%', fontSize: 11, padding: '5px 8px', minHeight: 28 }}
-                />
-                {v.branchError && (
-                  <div style={{ fontSize: 10.5, color: '#ff8a95', lineHeight: 1.35 }}>{v.branchError}</div>
-                )}
-              </form>
-            </div>
-
-            {v.gitStale && v.onReanalyze && (
-              <div style={{
-                display: 'flex', flexDirection: 'column', gap: 8,
-                padding: 'var(--space-3)', borderRadius: 'var(--radius-md)',
-                background: 'var(--color-accent-900)', border: '1px solid var(--color-accent-700)',
-              }}>
-                <div style={{ fontSize: 11.5, color: 'var(--color-accent-200)', lineHeight: 1.4 }}>
-                  {v.gitStaleReason === 'missing' || v.gitMissing
-                    ? `${v.gitMissing} branch file${v.gitMissing === 1 ? '' : 's'} missing from this graph — refreshing…`
-                    : v.gitStaleReason === 'sources' || v.gitSourcesNewer
-                      ? 'Source files changed since the last analyze — refreshing imports…'
-                      : 'Git moved since the last analyze — refreshing the graph…'}
-                </div>
-                <button type="button" className="btn" onClick={v.onReanalyze}
-                  style={{
-                    fontSize: 12, padding: '6px 10px',
-                    background: 'var(--color-accent-700)', borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--color-accent-600)',
-                  }}>
-                  Re-analyze now
-                </button>
-              </div>
-            )}
-            {!v.gitStale && v.onReanalyze && v.gitFileCount > 0 && (
-              <button type="button" className="btn btn-ghost" onClick={v.onReanalyze}
-                style={{ fontSize: 11, padding: 'var(--space-2) var(--space-3)', alignSelf: 'flex-start' }}>
-                Re-analyze
-              </button>
-            )}
-
-            <div style={{
-              display: 'flex', flexDirection: 'column', gap: 'var(--space-4)',
-              padding: 'var(--space-4)', borderRadius: 'var(--radius-md)',
-              background: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)',
-            }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', fontSize: 11, color: 'var(--color-neutral-400)' }}>
-                <span style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  Subfolder depth<span style={{ color: 'var(--color-neutral-600)' }}>{v.folderDepthLabel}</span>
-                </span>
-                <input
-                  type="range" min={0} max={3} step={1}
-                  value={v.folderDepth}
-                  onChange={v.onFolderDepth}
-                  style={{ width: '100%' }}
-                />
-                <span style={{ fontSize: 10, color: 'var(--color-neutral-600)' }}>
-                  0 = top folders only · 1 = one split · 2–3 = deeper
-                </span>
-              </label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-                <button type="button" className="btn btn-ghost" onClick={v.toggleCalls}
-                  style={{ fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)', borderColor: v.callsBorder, color: v.callsColor }}>
-                  {v.callsLabel}
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={v.toggleHops}
-                  style={{ fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)', borderColor: v.hopsBorder, color: v.hopsColor }}>
-                  {v.hopsLabel}
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={v.toggleGenerated}
-                  style={{ fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)', borderColor: v.generatedBorder, color: v.generatedColor }}>
-                  {v.generatedLabel}
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={v.toggleTests}
-                  style={{ fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)' }}>
-                  {v.testsLabel}
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={v.toggleHighlightGit}
-                  style={{
-                    fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)',
-                    borderColor: v.highlightGit ? 'var(--color-accent-700)' : 'var(--color-neutral-800)',
-                    color: v.highlightGit ? 'var(--color-accent-300)' : 'var(--color-neutral-500)',
-                  }}>
-                  {v.highlightGit ? 'Branch colors on' : 'Branch colors off'}
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={v.toggleOnlyGit}
-                  style={{
-                    fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)',
-                    borderColor: v.onlyGit ? 'var(--color-accent-700)' : 'var(--color-neutral-800)',
-                    color: v.onlyGit ? 'var(--color-accent-300)' : 'var(--color-neutral-500)',
-                  }}>
-                  {v.onlyGit ? 'Changed files only' : 'All files'}
-                </button>
-                {v.gitFileCount > 0 && (
-                  <button type="button" className="btn btn-ghost" onClick={v.focusGit}
-                    style={{ fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)' }}>
-                    Focus changed
-                  </button>
-                )}
-                <button type="button" className="btn btn-ghost" onClick={v.refit}
-                  style={{ fontSize: 11, whiteSpace: 'nowrap', padding: 'var(--space-2) var(--space-3)' }}>
-                  Recenter
-                </button>
-              </div>
-              {v.gitFileCount > 0 && (
-                <div style={{
-                  display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 10.5,
-                  color: 'var(--color-neutral-400)', alignItems: 'center',
-                }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 99, background: '#2EFF7A', display: 'block' }} />
-                    added{v.gitCounts?.A ? ` ${v.gitCounts.A}` : ''}
-                  </span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{
-                      width: 8, height: 8, borderRadius: 99, display: 'block',
-                      border: '2px solid #2EFF7A', boxSizing: 'border-box',
-                    }} />
-                    edited{v.gitCounts?.M ? ` ${v.gitCounts.M}` : ''}
-                  </span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 99, background: '#FF4D5E', display: 'block' }} />
-                    deleted{v.gitCounts?.D ? ` ${v.gitCounts.D}` : ''}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-              {v.groups.map((g) => (
-                <button
-                  key={g.id}
-                  type="button"
-                  className="tag tag-outline"
-                  onClick={g.onClick}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer',
-                    fontFamily: 'inherit', whiteSpace: 'nowrap', background: g.bg,
-                  }}
-                >
-                  <span style={{ width: 7, height: 7, borderRadius: 99, background: g.color, display: 'block', flex: 'none' }} />
-                  {g.label}
-                  <span style={{ color: 'var(--color-neutral-500)' }}>{g.count}</span>
-                </button>
-              ))}
-              <span
-                className="tag tag-outline"
-                title="Endpoint"
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-                  fontFamily: 'inherit', whiteSpace: 'nowrap',
-                }}
-              >
-                <canvas ref={v.legendRef} width={52} height={26} style={{ width: 26, height: 13, flex: 'none' }} />
-                Endpoint
-              </span>
-            </div>
-
-            {v.labelCycleHint && (
-              <div style={{
-                color: 'var(--color-accent-300)',
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                fontSize: 11,
-              }}>
-                {v.labelCycleHint}
-              </div>
-            )}
-          </aside>
+      <div className={`ex-root${sel ? ' sheet-open' : ''}`}>
+        {this.props.viewActive !== false && (
+          <ExplorerChrome
+            view="graph"
+            onView={this.props.onView}
+            git={this.props.gitInfo}
+            repo={v.repoName}
+            status={v.statusLine}
+            summary={v.graphSummary}
+            zoom={v.zoomLabel}
+            onZoomIn={() => this.zoomBy(1.15)}
+            onZoomOut={() => this.zoomBy(1 / 1.15)}
+            api={v}
+            menu={this.props.menu}
+            sheetOpen={!!sel}
+          />
         )}
-
-        <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
-          <canvas ref={v.canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', cursor: 'grab' }} />
-
+        <div className="ex-stage">
+          <canvas ref={v.canvasRef} />
           {v.captureBanner && (
-            <div
-              role="status"
-              data-capture-banner
-              style={{
-                position: 'absolute',
-                top: 56,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 8,
-                maxWidth: 'min(560px, calc(100% - 32px))',
-                padding: '12px 16px',
-                background: '#3a1d24',
-                border: '1px solid #ff8a80',
-                borderRadius: 'var(--radius-md)',
-                color: '#ffd7d4',
-                fontSize: 14,
-                lineHeight: 1.45,
-                textAlign: 'center',
-                boxShadow: 'var(--shadow-md)',
-              }}
-            >
+            <div role="status" data-capture-banner className="ex-capture-banner">
               {v.captureBanner}
             </div>
           )}
-
-          <button
-            type="button"
-            className="btn btn-icon btn-ghost"
-            onClick={this.props.onToggleSidebar}
-            title={v.sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-            aria-label={v.sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-            style={{
-              position: 'absolute', top: 12, left: 12, zIndex: 5,
-              width: 34, height: 34,
-              border: 'none',
-              background: 'color-mix(in srgb, var(--color-bg) 88%, transparent)',
-              color: 'var(--color-neutral-300)',
-            }}
-          >
-            <SidebarIcon open={v.sidebarOpen} />
-          </button>
-
+          {v.hoverTip && (
+            <div ref={v.tipRef} className="ex-tip">
+              <div className="t">
+                {v.hoverTip.changed && (
+                  <>
+                    {v.hoverTip.adds > 0 && <span className="plus">+{v.hoverTip.adds}</span>}
+                    {v.hoverTip.dels > 0 && <span className="minus">{v.hoverTip.adds ? ' ' : ''}−{v.hoverTip.dels}</span>}
+                    <span style={{ color: '#4a4e66' }}> · </span>
+                  </>
+                )}
+                {v.hoverTip.name}
+              </div>
+              {v.hoverTip.summary && <div className="sum">{v.hoverTip.summary}</div>}
+              <div className="meta">
+                {v.hoverTip.path} · {v.hoverTip.lines || '—'} lines · imports {v.hoverTip.imports} · imported by {v.hoverTip.importedBy}
+              </div>
+            </div>
+          )}
           {v.hopCard && (
             <div
               ref={v.hopCardRef}
@@ -380,20 +384,26 @@ export class CodeExplorer extends CodeGraphEngine {
         </div>
 
         {sel && (
-          <aside style={{
-            flex: 'none', width: 352, display: 'flex', flexDirection: 'column', gap: 'var(--space-4)',
-            padding: 'var(--space-6)', boxSizing: 'border-box',
-            borderLeft: '1px solid var(--color-neutral-900)', background: 'var(--color-bg)', overflow: 'hidden',
-          }}>
-            <div style={{ flex: 'none', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+          <aside className="ex-sheet">
+            <div style={{ flex: 'none', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '16px 16px 0' }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 'var(--font-heading-weight)', fontSize: 15, wordBreak: 'break-word' }}>{sel.label}</div>
                 <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, color: 'var(--color-neutral-500)', marginTop: 'var(--space-1)', wordBreak: 'break-all' }}>{sel.path}</div>
+              {this.props.onShowInFlow && (
+                <button
+                  type="button"
+                  onClick={() => this.props.onShowInFlow(sel.path)}
+                  style={{
+                    marginTop: 6, padding: 0, border: 'none', background: 'none', cursor: 'pointer',
+                    color: '#9184d9', font: 'inherit', fontSize: 11,
+                  }}
+                >Show in flow</button>
+              )}
               </div>
               <button type="button" className="btn btn-icon btn-ghost" onClick={v.clearSel} style={{ flex: 'none' }}>✕</button>
             </div>
 
-            <div style={{ flex: 'none', display: 'flex', gap: 6 }}>
+            <div style={{ flex: 'none', display: 'flex', flexWrap: 'wrap', gap: 6, padding: '10px 16px 0' }}>
               {[
                 { id: 'details', label: 'Details' },
                 { id: 'source', label: 'Source' },
@@ -420,7 +430,7 @@ export class CodeExplorer extends CodeGraphEngine {
               })}
             </div>
 
-            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', padding: '12px 16px 20px' }}>
               {v.panelTab === 'source' ? (
                 sel.diffLines?.length ? (
                   <div style={{
