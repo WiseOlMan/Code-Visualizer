@@ -15,7 +15,9 @@ import {
   collectPackageHeads,
   fileDiff,
   resolveBaseBranch,
+  resolveRev,
 } from '../tools/git-changes.mjs';
+import { resolveCompareBase } from '../tools/pr-base.mjs';
 import {
   checkoutBranch,
   checkoutWorkspace,
@@ -173,13 +175,47 @@ function sourcesChangedSinceAnalyze(packages, files, savedFp) {
   return changed;
 }
 
-function buildGitChangesResponse(root, baseHint) {
+/** Explicit `pr` wins over `base`. Env defaults apply only when the query omits both. */
+function compareHintsFromQuery(query) {
+  const pr = query?.pr != null ? String(query.pr).trim() : '';
+  const base = query?.base != null ? String(query.base).trim() : '';
+  if (pr) return { pr, base: '' };
+  if (base) return { pr: '', base };
+  const envPr = process.env.CODE_EXPLORER_PR ? String(process.env.CODE_EXPLORER_PR).trim() : '';
+  const envBase = process.env.CODE_EXPLORER_BASE ? String(process.env.CODE_EXPLORER_BASE).trim() : '';
+  if (envPr) return { pr: envPr, base: '' };
+  if (envBase) return { pr: '', base: envBase };
+  return { pr: '', base: '' };
+}
+
+async function buildGitChangesResponse(root, hints = {}) {
   const { packages, meta, graph } = packagesForRoot(root);
   if (!packages.length) {
     return { ok: false, error: 'No packages for workspace', files: [], packages: [], stale: false };
   }
-  const pkgChanges = collectGitChanges(packages, { base: baseHint || undefined });
-  const files = pkgChanges.flatMap((p) => p.files);
+  const specByRoot = new Map();
+  const specFor = async (pkgRoot) => {
+    if (!specByRoot.has(pkgRoot)) {
+      specByRoot.set(pkgRoot, await resolveCompareBase(pkgRoot, hints));
+    }
+    return specByRoot.get(pkgRoot);
+  };
+  const primaryRoot = packages.find((p) => path.resolve(p.root) === path.resolve(root))?.root
+    || packages[0].root;
+  const primary = await specFor(primaryRoot);
+  const pkgChanges = [];
+  for (const pkg of packages) {
+    const spec = await specFor(pkg.root);
+    const part = collectGitChanges([pkg], { base: spec?.baseLabel || spec?.base || undefined });
+    pkgChanges.push(...part);
+  }
+  // Nested package roots live inside this one git repo, so `git -C` can repeat
+  // the same diff with a prefix that doesn't exist on disk. Keep real paths.
+  const files = pkgChanges.flatMap((p) => p.files).filter((f) => {
+    if (f.status === 'D') return true;
+    const abs = resolveChangedAbs(packages, f);
+    return !!(abs && fs.existsSync(abs));
+  });
   const nodeIds = new Set((graph?.nodes || []).map((n) => n.id));
   // Only JS/TS can appear in the graph — ignore docs/assets in the "missing" nag.
   const missingFromGraph = files.filter((f) => {
@@ -191,13 +227,21 @@ function buildGitChangesResponse(root, baseHint) {
     return true;
   });
   const freshness = checkFreshness(packages, meta?.packageHeads || {});
-  const sourcesNewer = sourcesChangedSinceAnalyze(packages, files, meta?.sourceFingerprint);
+  // Fingerprints are taken against the default branch at analyze time. Compare
+  // freshness with that same base so a PR-base overlay cannot loop re-analyze.
+  const freshnessFiles = collectGitChanges(packages).flatMap((p) => p.files);
+  const sourcesNewer = sourcesChangedSinceAnalyze(packages, freshnessFiles, meta?.sourceFingerprint);
   // Stale when HEADs moved, new source files aren't in the graph, or fingerprinted
   // sources actually changed after the snapshot (not mere clock/mtime noise).
   const stale = freshness.stale || missingFromGraph.length > 0 || sourcesNewer.length > 0;
   return {
     ok: true,
     root,
+    base: primary?.baseLabel || primary?.base || null,
+    baseLabel: primary?.baseLabel || primary?.base || null,
+    baseSource: primary?.source || 'default',
+    baseNote: primary?.note || null,
+    pr: primary?.pr || null,
     packages: pkgChanges.map((p) => ({
       name: p.name,
       prefix: p.prefix,
@@ -596,12 +640,11 @@ app.get('/api/workspace', (req, res) => {
   res.json(snap);
 });
 
-app.get('/api/git/changes', (req, res) => {
+app.get('/api/git/changes', async (req, res) => {
   const root = req.query.root ? String(req.query.root) : state.root;
   if (!root) return res.status(400).json({ error: 'Missing root' });
-  const base = req.query.base ? String(req.query.base) : undefined;
   try {
-    res.json(buildGitChangesResponse(root, base));
+    res.json(await buildGitChangesResponse(root, compareHintsFromQuery(req.query)));
   } catch (err) {
     console.error('[git/changes]', err);
     res.status(500).json({ ok: false, error: err.message || String(err) });
@@ -704,7 +747,7 @@ app.get('/api/source', (req, res) => {
   res.type('text/plain').send(fs.readFileSync(abs, 'utf8'));
 });
 
-app.get('/api/source/diff', (req, res) => {
+app.get('/api/source/diff', async (req, res) => {
   try {
     const rel = String(req.query.path || '');
     const rootHint = req.query.root ? String(req.query.root) : null;
@@ -712,7 +755,15 @@ app.get('/api/source/diff', (req, res) => {
     if (!hit?.pkgRoot || !hit.repoRel) {
       return res.status(404).json({ ok: false, error: 'File not found', lines: [] });
     }
-    const base = resolveBaseBranch(hit.pkgRoot);
+    const requested = req.query.base ? String(req.query.base).trim() : '';
+    let base = null;
+    if (requested && resolveRev(hit.pkgRoot, requested)) {
+      base = requested.replace(/^origin\//, '');
+    } else if (!requested) {
+      const spec = await resolveCompareBase(hit.pkgRoot, compareHintsFromQuery(req.query));
+      base = spec?.baseLabel || spec?.base || null;
+    }
+    if (!base) base = resolveBaseBranch(hit.pkgRoot);
     const diff = fileDiff(hit.pkgRoot, hit.repoRel, { base });
     if (!diff) {
       return res.json({ ok: true, path: rel, base, status: null, lines: [] });

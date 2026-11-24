@@ -33,7 +33,7 @@ The process prints a `ui` URL (API + viewer on one port). Leave it running. Do *
 
 1. Open the printed URL.
 2. Wait until analyze finishes and the graph is visible.
-3. Confirm the sidebar shows **Changed files only** (branch colors on). If the diff is empty, the UI falls back to the full graph.
+3. Confirm the sidebar shows **Changed files only** (branch colors on). If the diff is empty, the UI falls back to the full graph. **Compare to** uses the open pull request’s base branch when GitHub can resolve one; otherwise it uses `main`/`master`. Paste a PR URL or `#N`, or start with `code-explorer serve --pr <number|url>`, to pin a stacked base.
 4. Screenshot the graph with computer use. Attach that image to the chat or PR.
 5. Leave the server up so the user can take over the cloud desktop and click around.
 

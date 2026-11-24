@@ -364,9 +364,10 @@ export class CodeGraphEngine extends React.Component {
     query: '', selId: null, selHopKey: null, code: null, codeDiff: null, sigTick: 0, labelTick: 0, panelTab: 'details',
     folderDepth: 2, hideTests: true, hideGenerated: true,
     showCalls: true, showHops: true, highlightGit: true, onlyGit: false,
-    branchInput: '',
+    branchInput: '', compareInput: '',
     stats: '', repoName: '',
-    gitSummary: '', gitStale: false, gitMissing: 0, gitSourcesNewer: 0, gitStaleReason: null, gitFileCount: 0,
+    gitSummary: '', gitHeadLabel: '', gitBaseLabel: '', gitPr: null, gitBaseNote: '', gitBaseSource: '',
+    gitStale: false, gitMissing: 0, gitSourcesNewer: 0, gitStaleReason: null, gitFileCount: 0,
   };
 
   constructor(p) {
@@ -537,27 +538,36 @@ export class CodeGraphEngine extends React.Component {
   }
 
   sourceDiff(id) {
+    this._diffGen = this._diffGen || 0;
+    const gen = this._diffGen;
+    const base = this.props.gitInfo?.baseLabel || this.props.gitInfo?.base || '';
+    const cacheKey = `${base}\n${id}`;
     this._diff = this._diff || {};
     this._diffPending = this._diffPending || {};
-    if (this._diff[id] !== undefined) return Promise.resolve(this._diff[id]);
-    if (this._diffPending[id]) return this._diffPending[id];
+    if (this._diff[cacheKey] !== undefined) return Promise.resolve(this._diff[cacheKey]);
+    if (this._diffPending[cacheKey]) return this._diffPending[cacheKey];
     const root = this.props.workspaceRoot;
     let url = '/api/source/diff?path=' + encodeURIComponent(id);
     if (root) url += '&root=' + encodeURIComponent(root);
-    this._diffPending[id] = fetch(url)
+    if (base) url += '&base=' + encodeURIComponent(base);
+    const pr = this.props.comparePr || '';
+    if (pr) url += '&pr=' + encodeURIComponent(pr);
+    this._diffPending[cacheKey] = fetch(url)
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null)
       .then((d) => {
+        if (gen !== this._diffGen) return null;
         const payload = d?.lines?.length ? d : null;
-        this._diff[id] = payload;
-        delete this._diffPending[id];
+        this._diff[cacheKey] = payload;
+        delete this._diffPending[cacheKey];
         return payload;
       });
-    return this._diffPending[id];
+    return this._diffPending[cacheKey];
   }
 
   /** Drop cached diffs when the change set moves so Source stays honest. */
   invalidateSourceDiffs() {
+    this._diffGen = (this._diffGen || 0) + 1;
     this._diff = {};
     this._diffPending = {};
   }
@@ -859,6 +869,33 @@ export class CodeGraphEngine extends React.Component {
       .map(([id, st]) => `${id}:${st}`).join('|')
       + `|stale:${gitInfo?.stale ? 1 : 0}:${gitInfo?.staleReason || ''}`
       + `|miss:${(gitInfo?.missingFromGraph || []).join(',')}`;
+    const branches = [...new Set((gitInfo?.packages || []).map((p) => p.branch).filter(Boolean))];
+    const bases = [...new Set((gitInfo?.packages || []).map((p) => p.base).filter(Boolean))];
+    const counts = { A: 0, M: 0, D: 0 };
+    for (const st of byStatus.values()) counts[st] = (counts[st] || 0) + 1;
+    const baseLabel = gitInfo?.baseLabel || bases[0] || '';
+    let gitSummary = '';
+    if (branches.length || byStatus.size || baseLabel) {
+      const br = branches.length ? branches.join(', ') : 'HEAD';
+      const base = baseLabel ? ` vs ${baseLabel}` : '';
+      const parts = [];
+      if (counts.A) parts.push(`${counts.A} added`);
+      if (counts.M) parts.push(`${counts.M} edited`);
+      if (counts.D) parts.push(`${counts.D} deleted`);
+      gitSummary = `${br}${base} · ${parts.join(' · ') || (byStatus.size ? `${byStatus.size} changed` : 'no changes')}`;
+      const missingCount = gitInfo?.missingFromGraph?.length || 0;
+      if (missingCount) gitSummary += ` · ${missingCount} not in graph`;
+    }
+    const compareState = {
+      gitSummary,
+      gitHeadLabel: branches.join(', '),
+      gitBaseLabel: baseLabel,
+      gitPr: gitInfo?.pr || null,
+      gitBaseNote: gitInfo?.baseNote || '',
+      gitBaseSource: gitInfo?.baseSource || '',
+      gitFileCount: byStatus.size,
+      gitCounts: counts,
+    };
     if (overlaySig === this._gitOverlaySig && this.nodes?.length) {
       // Same change set — refresh banner fields only, don't rebuild nodes/layout.
       const missing = gitInfo?.missingFromGraph?.length || 0;
@@ -867,6 +904,7 @@ export class CodeGraphEngine extends React.Component {
         gitMissing: missing,
         gitSourcesNewer: gitInfo?.sourcesNewer?.length || 0,
         gitStaleReason: gitInfo?.staleReason || null,
+        ...compareState,
       });
       return;
     }
@@ -915,32 +953,15 @@ export class CodeGraphEngine extends React.Component {
       }
     }
 
-    const branches = [...new Set((gitInfo?.packages || []).map((p) => p.branch).filter(Boolean))];
-    const bases = [...new Set((gitInfo?.packages || []).map((p) => p.base).filter(Boolean))];
     const missing = gitInfo?.missingFromGraph?.length || 0;
     const sourcesNewer = gitInfo?.sourcesNewer?.length || 0;
-    const counts = { A: 0, M: 0, D: 0 };
-    for (const st of byStatus.values()) counts[st] = (counts[st] || 0) + 1;
-    let gitSummary = '';
-    if (branches.length || byStatus.size) {
-      const br = branches.length ? branches.join(', ') : 'HEAD';
-      const base = bases[0] ? ` vs ${bases[0]}` : '';
-      const parts = [];
-      if (counts.A) parts.push(`${counts.A} added`);
-      if (counts.M) parts.push(`${counts.M} edited`);
-      if (counts.D) parts.push(`${counts.D} deleted`);
-      gitSummary = `${br}${base} · ${parts.join(' · ') || `${byStatus.size} changed`}`;
-      if (missing) gitSummary += ` · ${missing} not in graph`;
-    }
     const gitFileCount = byStatus.size;
     const patch = {
-      gitSummary,
+      ...compareState,
       gitStale: !!gitInfo?.stale,
       gitMissing: missing,
       gitSourcesNewer: sourcesNewer,
       gitStaleReason: gitInfo?.staleReason || null,
-      gitFileCount,
-      gitCounts: counts,
     };
     // Auto: colors on when there are edits, off when the diff is empty.
     // Manual toggle pins until the change set clears, then auto resumes.
@@ -1905,6 +1926,22 @@ export class CodeGraphEngine extends React.Component {
       highlightGit: this.state.highlightGit,
       onlyGit: this.state.onlyGit,
       gitSummary: this.state.gitSummary,
+      gitHeadLabel: this.state.gitHeadLabel || '',
+      gitBaseLabel: this.state.gitBaseLabel || '',
+      gitPr: this.state.gitPr || null,
+      gitBaseNote: this.state.gitBaseNote || '',
+      gitBaseSource: this.state.gitBaseSource || '',
+      comparePr: this.props.comparePr || '',
+      compareInput: this.state.compareInput || '',
+      onCompareInput: (e) => this.setState({ compareInput: e.target.value }),
+      submitCompare: () => {
+        if (!this.props.onComparePr) return;
+        this.props.onComparePr((this.state.compareInput || '').trim());
+      },
+      clearCompare: () => {
+        this.setState({ compareInput: '' });
+        if (this.props.onComparePr) this.props.onComparePr('');
+      },
       gitStale: this.state.gitStale,
       gitMissing: this.state.gitMissing,
       gitSourcesNewer: this.state.gitSourcesNewer,

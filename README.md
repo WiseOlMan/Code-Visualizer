@@ -9,7 +9,7 @@ Interactive force-graph explorer for JavaScript / TypeScript codebases. Browse i
 - **Tabs** — open multiple repos and switch between them (restored on refresh)  
 - **Search** — magnifying glass (top-right of the tab row); this repo by default, or all open repos  
 - **Sidebar** — filters + legend; toggle from the panel icon at the top-left of the graph  
-- **Branch changes** — green fill = added, green ring = edited, red = deleted (vs `main`/`master`); “Changed files only” keeps folder layout; Source panel shows line diffs; auto-refreshes when dirty sources change after analyze  
+- **Branch changes** — green fill = added, green ring = edited, red = deleted. The diff uses the open GitHub pull request’s base when this branch has one (so stacked PRs are not compared to `main`), otherwise `main`/`master`/`develop`. Paste a PR URL or `#N` under **Compare to** to pin that PR’s base. “Changed files only” keeps folder layout; Source panel shows line diffs; auto-refreshes when dirty sources change after analyze  
 - **Switch branch** — paste a branch name to check it out in the current repo, or `owner/repo@branch` / a GitHub tree URL to open that repo (new tab) on that branch  
 
 Click a node for imports, callers, symbols, and source.
@@ -49,7 +49,7 @@ code-explorer serve --repo "$PWD"
 That serves the UI and API on one port (default `8787`, or the next free port) and opens the current repo in **Changed files only**. Leave the process running so you can click around — including after taking over a cloud agent desktop.
 
 ```text
-code-explorer serve [--repo <path>] [--port <n>] [--all-files] [--open]
+code-explorer serve [--repo <path>] [--port <n>] [--all-files] [--open] [--base <branch>] [--pr <number|url>]
 code-explorer analyze <repo> [--out <dir>]
 ```
 
