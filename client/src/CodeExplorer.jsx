@@ -288,8 +288,9 @@ export class CodeExplorer extends CodeGraphEngine {
               <div className="t">
                 {v.hoverTip.changed && (
                   <>
-                    <span className="plus">+{v.hoverTip.adds}</span>
-                    {v.hoverTip.dels > 0 && <span className="minus"> −{v.hoverTip.dels}</span>}
+                    {v.hoverTip.moved > 0 && <span style={{ color: '#6ec8d4' }}>↔{v.hoverTip.moved}</span>}
+                    {v.hoverTip.adds > 0 && <span className="plus">{v.hoverTip.moved ? ' ' : ''}+{v.hoverTip.adds}</span>}
+                    {v.hoverTip.dels > 0 && <span className="minus">{(v.hoverTip.moved || v.hoverTip.adds) ? ' ' : ''}−{v.hoverTip.dels}</span>}
                     <span style={{ color: '#4a4e66' }}> · </span>
                   </>
                 )}

@@ -72,21 +72,49 @@ function ancestorsOf(flow, selectedId) {
   return keep;
 }
 
-function DiffSquare({ adds, dels, lines, status, size }) {
+function DiffSquare({ adds, dels, lines, status, size, moved = 0 }) {
   const mapped = status === 'added' || status === 'A' ? 'A' : status === 'deleted' || status === 'D' ? 'D' : status;
-  const fr = fillFractions(adds, dels, lines, mapped);
+  const fr = fillFractions(adds, dels, lines, mapped, moved);
   const radius = Math.max(3, size * 0.22);
   if (!fr) {
     return <span className="dsq hollow" style={{ width: size, height: size, borderRadius: radius }} />;
   }
-  const g = fr.g * 100;
-  const r = fr.r * 100;
+  const g = (fr.g || 0) * 100;
+  const m = (fr.m || 0) * 100;
+  const r = (fr.r || 0) * 100;
+  const redPct = Math.max(r, (2.5 / size) * 100);
+  const redBottom = fr.m ? Math.max(g, g + m - redPct) : g;
   return (
     <span className="dsq" style={{ width: size, height: size, borderRadius: radius }}>
-      <i style={{ bottom: 0, height: `${g}%`, background: 'rgba(46,255,122,.85)' }} />
-      {dels > 0 && <i style={{ bottom: `${g}%`, height: `${Math.max(r, (2.5 / size) * 100)}%`, background: 'rgba(255,77,94,.9)' }} />}
+      {g > 0 && <i style={{ bottom: 0, height: `${g}%`, background: 'rgba(46,255,122,.85)' }} />}
+      {m > 0 && <i style={{ bottom: `${g}%`, height: `${m}%`, background: 'rgba(110,200,212,.88)' }} />}
+      {r > 0 && <i style={{ bottom: `${redBottom}%`, height: `${redPct}%`, background: 'rgba(255,77,94,.9)' }} />}
     </span>
   );
+}
+
+/** Fan-out from one box gets separate ports and a vertical lane in the gutter. */
+function spreadEdges(edges) {
+  const groups = new Map();
+  edges.forEach((edge, index) => {
+    edge.lane = 0;
+    const key = `${edge.sameCol ? 'c' : 'x'}:${edge.from}`;
+    const list = groups.get(key) || [];
+    list.push({ edge, index });
+    groups.set(key, list);
+  });
+  for (const list of groups.values()) {
+    list.sort((a, b) => a.edge.y2 - b.edge.y2 || String(a.edge.kind).localeCompare(String(b.edge.kind)) || a.index - b.index);
+    const n = list.length;
+    list.forEach((item, i) => {
+      const lane = i - (n - 1) / 2;
+      item.edge.lane = lane;
+      item.edge.slot = i;
+      item.edge.slots = n;
+      if (n > 1) item.edge.y1 += lane * 6;
+    });
+  }
+  return edges;
 }
 
 export function FlowView({
@@ -221,7 +249,8 @@ export function FlowView({
         y2: Math.round(b.top + b.height / 2 - origin.top),
       });
     }
-    const sig = `${flow.id}:${scale}:${next.map((edge) => `${edge.kind}:${edge.from}:${edge.to}:${edge.x1}:${edge.y1}:${edge.x2}:${edge.y2}`).join('|')}`;
+    spreadEdges(next);
+    const sig = `${flow.id}:${scale}:${next.map((edge) => `${edge.kind}:${edge.from}:${edge.to}:${edge.x1}:${edge.y1}:${edge.x2}:${edge.y2}:${edge.lane || 0}`).join('|')}`;
     if (arrowSig.current !== sig) {
       arrowSig.current = sig;
       document.documentElement.dataset.explorerReady = '0';
@@ -266,8 +295,9 @@ export function FlowView({
       }
     }
     for (const fn of file.functions) lines = Math.max(lines, fn.endLine || 0);
-    const status = git?.status || (adds + dels ? 'M' : '');
-    return { adds, dels, lines: lines || adds + dels || 24, status };
+    const status = git?.status === 'R' || git?.status === 'C' ? 'M' : (git?.status || (adds + dels ? 'M' : ''));
+    const moved = Number(git?.moved) || 0;
+    return { adds, dels, moved, lines: lines || git?.lines || adds + moved || 24, status };
   }
 
   const status = showingIndex
@@ -323,7 +353,7 @@ export function FlowView({
                 <span>Flow {Math.min(flowNo, flows.length)} of {Math.max(flows.length, 1)}</span>
                 <button type="button" onClick={() => setFlowNo((n) => Math.min(flows.length, n + 1))} disabled={!flows.length || flowNo >= flows.length} aria-label="Next flow">›</button>
               </div>
-              <div className="flow-cols" style={{ gap: Math.round(36 * scale) }}>
+              <div className="flow-cols" style={{ gap: Math.round(78 * scale) }}>
                 {flow.columns.map((column) => {
                   const changed = column.files.some((file) => file.functions.some((fn) => fn.status && fn.status !== 'unchanged'));
                   const on = column.files.some((file) => file.functions.some((fn) => fn.id === selectedId));
@@ -346,7 +376,7 @@ export function FlowView({
                                 <div className="d">{parts.dir}</div>
                                 <div className="f">{parts.name}</div>
                               </div>
-                              <DiffSquare adds={stat.adds} dels={stat.dels} lines={stat.lines} status={stat.status} size={side} />
+                              <DiffSquare adds={stat.adds} dels={stat.dels} moved={stat.moved} lines={stat.lines} status={stat.status} size={side} />
                             </div>
                             {file.functions.map((fn) => {
                               const view = markView(fn, mark);
@@ -398,15 +428,18 @@ export function FlowView({
                   const onPath = !selectedId || (keep.has(edge.from) && (keep.has(edge.to) || edge.from === selectedId));
                   const paint = edgePaint(edge, !!selectedId && onPath);
                   const faded = selectedId && !onPath;
+                  const slots = edge.slots || 1;
+                  const slot = edge.slot || 0;
                   let d;
                   if (edge.sameCol) {
-                    const bend = 10 + Math.abs(edge.y2 - edge.y1) * 0.15;
+                    const bend = 16 + Math.abs(edge.y2 - edge.y1) * 0.2 + Math.abs(edge.lane || 0) * 10;
                     const x = Math.min(edge.x1, edge.x2) - bend;
                     d = `M ${edge.x1} ${edge.y1} C ${x} ${edge.y1} ${x} ${edge.y2} ${edge.x2 - 6} ${edge.y2}`;
                   } else {
-                    const span = Math.max(24, edge.x2 - edge.x1);
-                    const xMid = edge.x1 + Math.min(48, span * 0.45);
-                    d = `M ${edge.x1} ${edge.y1} C ${xMid} ${edge.y1} ${edge.x2 - span * 0.35} ${edge.y2} ${edge.x2 - 7} ${edge.y2}`;
+                    const room = Math.max(24, edge.x2 - edge.x1 - 20);
+                    const step = Math.min(14, room / Math.max(slots, 1));
+                    const laneX = edge.x1 + 12 + slot * step;
+                    d = `M ${edge.x1} ${edge.y1} H ${laneX} V ${edge.y2} H ${edge.x2 - 5}`;
                   }
                   return (
                     <path

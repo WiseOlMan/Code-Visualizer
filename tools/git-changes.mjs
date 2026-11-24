@@ -107,9 +107,14 @@ function parseNameStatus(text) {
     // e.g. "M\tpath" or "R100\told\tnew"
     const parts = line.split('\t');
     const status = (parts[0] || '?').replace(/\d+$/, '').slice(0, 1) || '?';
+    const oldPath = parts.length >= 3 ? parts[1] : null;
     const filePath = parts.length >= 3 ? parts[parts.length - 1] : parts[1];
     if (!filePath) continue;
-    files.push({ path: filePath.split(path.sep).join('/'), status });
+    files.push({
+      path: filePath.split(path.sep).join('/'),
+      oldPath: oldPath ? oldPath.split(path.sep).join('/') : null,
+      status,
+    });
   }
   return files;
 }
@@ -158,6 +163,74 @@ function countLines(abs) {
   } catch {
     return 0;
   }
+}
+
+function readFile(abs) {
+  try { return fs.readFileSync(abs, 'utf8'); } catch { return ''; }
+}
+
+const SKIP_FN = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'constructor']);
+
+function functionSpans(src) {
+  const text = String(src || '');
+  const re = /(?:^|\n)\s*(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)|(\w+))\s*\([^)]*\)\s*\{/g;
+  const hits = [];
+  let match;
+  while ((match = re.exec(text))) {
+    const name = match[1] || match[2];
+    if (!name || SKIP_FN.has(name)) continue;
+    hits.push({ name, at: match.index });
+  }
+  const out = new Map();
+  hits.forEach((hit, index) => {
+    const end = hits[index + 1] ? hits[index + 1].at : text.length;
+    const body = text.slice(hit.at, end).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/.*$/gm, '').replace(/\s+/g, ' ').trim();
+    if (!out.has(hit.name)) out.set(hit.name, body);
+  });
+  return out;
+}
+
+function leadingComment(src) {
+  const block = String(src || '').match(/\/\*\*([\s\S]*?)\*\//);
+  const line = String(src || '').match(/(?:^|\n)\s*\/\/\s*([^\n]+)/);
+  const raw = block ? block[1] : (line ? line[1] : '');
+  return raw.replace(/\n\s*\*\s?/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function clip(text, max = 110) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (clean.length <= max) return clean;
+  return `${clean.slice(0, max - 1).trimEnd()}…`;
+}
+
+/** One line: leading comment, then moved / added / edited / removed names. */
+function changeSummary(headSrc, baseSrc, { renamed = false } = {}) {
+  const head = functionSpans(headSrc);
+  const base = functionSpans(baseSrc);
+  const added = [];
+  const edited = [];
+  const moved = [];
+  const removed = [];
+  for (const [name, body] of head) {
+    if (!base.has(name)) {
+      (renamed ? moved : added).push(name);
+    } else if (base.get(name) !== body) edited.push(name);
+    else if (renamed) moved.push(name);
+  }
+  for (const name of base.keys()) {
+    if (!head.has(name)) removed.push(name);
+  }
+  const bits = [];
+  if (moved.length) bits.push(`moves ${moved.slice(0, 3).join(', ')}`);
+  if (added.length) bits.push(`adds ${added.slice(0, 3).join(', ')}`);
+  if (edited.length) bits.push(`edits ${edited.slice(0, 3).join(', ')}`);
+  if (removed.length) bits.push(`removes ${removed.slice(0, 2).join(', ')}`);
+  const comment = leadingComment(headSrc);
+  const actions = bits.join(' · ');
+  let text = actions;
+  if (comment && actions && actions.length + comment.length + 3 <= 110) text = `${actions} · ${comment}`;
+  else if (!actions) text = comment;
+  return clip(text);
 }
 
 function diffAgainstBase(cwd, base) {
@@ -214,6 +287,7 @@ export function collectGitChanges(packages, opts = {}) {
       const prev = byPath.get(graphId);
       byPath.set(graphId, {
         path: f.path,
+        oldPath: f.oldPath || prev?.oldPath || null,
         graphId,
         status: f.status,
         uncommitted: !!(prev?.uncommitted || f.uncommitted),
@@ -228,11 +302,26 @@ export function collectGitChanges(packages, opts = {}) {
       const dirty = dirtyStat.get(file.path) || { additions: 0, deletions: 0 };
       let additions = committed.additions + dirty.additions;
       let deletions = committed.deletions + dirty.deletions;
+      const abs = path.join(pkg.root, file.path);
+      const headSrc = readFile(abs);
+      const lines = headSrc ? headSrc.split('\n').length : 0;
       if (!additions && !deletions && (file.status === 'A' || file.status === '?')) {
-        additions = countLines(path.join(pkg.root, file.path));
+        additions = lines;
       }
+      const renamed = file.status === 'R' || file.status === 'C';
+      const moved = renamed ? Math.max(0, lines - additions) : 0;
       file.additions = additions;
       file.deletions = deletions;
+      file.moved = moved;
+      file.lines = lines;
+      const code = /\.(jsx?|tsx?|mjs|cjs)$/.test(file.path);
+      if (code) {
+        const basePath = file.oldPath || file.path;
+        const baseSrc = rev ? (git(pkg.root, ['show', `${rev}:${basePath}`]) || '') : '';
+        file.summary = changeSummary(headSrc, renamed || file.status === 'A' ? (renamed ? baseSrc : '') : baseSrc, { renamed });
+      } else {
+        file.summary = '';
+      }
     }
     out.push({
       name: pkg.name || path.basename(pkg.root),

@@ -213,7 +213,10 @@
   font-size: 12px; color: #9a9db2; width: max-content; max-width: 340px; pointer-events: none;
 }
 .ex-tip .t { color: #e9e9ed; font-weight: 600; font-size: 12.5px; font-family: "JetBrains Mono", ui-monospace, monospace; }
-.ex-tip .sum { margin-top: 6px; color: #e9e9ed; line-height: 1.45; }
+.ex-tip .sum {
+  margin-top: 6px; color: #e9e9ed; line-height: 1.45;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px;
+}
 .ex-tip .meta { margin-top: 7px; font-size: 10.5px; color: #686c83; font-family: "JetBrains Mono", ui-monospace, monospace; }
 .ex-tip .plus { color: #2EFF7A; }
 .ex-tip .minus { color: #FF4D5E; }
