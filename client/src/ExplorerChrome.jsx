@@ -235,10 +235,12 @@ function Filters({ api, filesMode }) {
       {(api.focusSeedChips?.length > 0) && (
         <div className="ex-chips">
           {api.focusSeedChips.map((chip) => (
-            <span key={chip.id} className="ex-chip">
-              {chip.label}
-              {chip.removable && <button type="button" aria-label={`Remove ${chip.label}`} onClick={() => api.removeFocusSeed(chip.id)}>×</button>}
-            </span>
+            chip.label ? (
+              <span key={chip.id} className="ex-chip">
+                <span className="ex-chip-label">{chip.label}</span>
+                {chip.removable && <button type="button" aria-label={`Remove ${chip.label}`} onClick={() => api.removeFocusSeed(chip.id)}>×</button>}
+              </span>
+            ) : null
           ))}
           {api.focusSeedMore > 0 && <span className="k">+{api.focusSeedMore}</span>}
         </div>

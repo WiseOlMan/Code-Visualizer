@@ -214,10 +214,15 @@ async function buildGitChangesResponse(root, hints = {}) {
   }
   // Nested package roots live inside this one git repo, so `git -C` can repeat
   // the same diff with a prefix that doesn't exist on disk. Keep real paths.
+  const seenGraph = new Set();
   const files = pkgChanges.flatMap((p) => p.files).filter((f) => {
-    if (f.status === 'D') return true;
-    const abs = resolveChangedAbs(packages, f);
-    return !!(abs && fs.existsSync(abs));
+    if (!f.graphId || seenGraph.has(f.graphId)) return false;
+    if (f.status !== 'D') {
+      const abs = resolveChangedAbs(packages, f);
+      if (!abs || !fs.existsSync(abs)) return false;
+    }
+    seenGraph.add(f.graphId);
+    return true;
   });
   const nodeIds = new Set((graph?.nodes || []).map((n) => n.id));
   // Only JS/TS can appear in the graph — ignore docs/assets in the "missing" nag.

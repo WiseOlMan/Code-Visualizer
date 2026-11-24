@@ -1,12 +1,15 @@
 import React from 'react';
 import {
   computeFocusView,
+  createNodeIdIndex,
   decodeFocusQuery,
   defaultHops,
   encodeFocusQuery,
   focusStateJson,
   formatShaPill,
   isTestPath,
+  normalizeGraphId,
+  resolveChangedNodeId,
   shortDirLabel,
 } from './focusView.js';
 import { radiusFromLines, sideFromRadius, fillFractions, fallbackSummary, TEAL } from './diffMark.js';
@@ -929,6 +932,18 @@ export class CodeGraphEngine extends React.Component {
     });
   }
 
+  gitMarksMissing(byStatus) {
+    if (!this.nodes?.length) return false;
+    for (const n of this.nodes) {
+      const want = byStatus.get(n.id) || null;
+      if ((n.gitStatus || null) !== want || !!n.gitChanged !== !!want) return true;
+    }
+    for (const id of byStatus.keys()) {
+      if (!this.byId?.[id]) return true;
+    }
+    return false;
+  }
+
   applyGitOverlay(gitInfo) {
     const epoch = this.props.layoutEpoch || '';
     this._overlaySettled = false;
@@ -936,14 +951,20 @@ export class CodeGraphEngine extends React.Component {
     const byStatus = new Map();
     const byDiff = new Map();
     const rank = { A: 3, M: 2, D: 1 };
+    const idIndex = createNodeIdIndex((this.nodes || []).filter((n) => !n.gitGhost).map((n) => n.id));
     for (const f of files) {
-      if (!f.graphId) continue;
+      const rawId = f.graphId || f.path || '';
+      if (!rawId) continue;
       const st = normGitStatus(f.status);
       if (!st) continue;
-      const prev = byStatus.get(f.graphId);
+      // Prefer the real node id. Unmatched deletions keep a normalized id so a ghost can still appear.
+      const nodeId = resolveChangedNodeId(rawId, idIndex) || null;
+      const id = nodeId || (st === 'D' ? normalizeGraphId(rawId) : null);
+      if (!id) continue;
+      const prev = byStatus.get(id);
       if (!prev || (rank[st] || 0) > (rank[prev] || 0)) {
-        byStatus.set(f.graphId, st);
-        byDiff.set(f.graphId, {
+        byStatus.set(id, st);
+        byDiff.set(id, {
           additions: Number(f.additions) || 0,
           deletions: Number(f.deletions) || 0,
           summary: f.summary || '',
@@ -985,8 +1006,10 @@ export class CodeGraphEngine extends React.Component {
       gitFileCount: byStatus.size,
       gitCounts: counts,
     };
-    if (overlaySig === this._gitOverlaySig && this.nodes?.length) {
-      // Same change set — refresh banner fields only, don't rebuild nodes/layout.
+    // A graph rebuild replaces nodes and drops git flags. The change-set signature
+    // can match while every node is unmarked — "Changed only" then hides the repo.
+    const marksMissing = this.gitMarksMissing(byStatus);
+    if (overlaySig === this._gitOverlaySig && this.nodes?.length && !marksMissing) {
       const missing = gitInfo?.missingFromGraph?.length || 0;
       this.settleOverlay(epoch, {
         gitStale: !!gitInfo?.stale,
@@ -1079,11 +1102,10 @@ export class CodeGraphEngine extends React.Component {
     }
     this.settleOverlay(epoch, patch, () => {
       this.applyFilter();
-      if (this.props.initialOnlyGit && gitFileCount && !this._focusedGitOnce) {
-        this._focusedGitOnce = true;
-        const ns = (this.nodes || []).filter((n) => n.gitChanged && !n.off);
-        if (ns.length) this.fitNodes(ns, { pad: 64, maxK: 2.8 });
-      }
+      this._focusedGitOnce = true;
+      // Fit after the next simulation step, which seeds files into folder cells.
+      // Fitting here would frame the pre-layout cluster and leave the camera zoomed out.
+      this.queueFit({ all: true });
     });
   }
 
@@ -1094,23 +1116,21 @@ export class CodeGraphEngine extends React.Component {
     const showHops = this.state.showHops !== false;
     const onlyGit = this.state.onlyGit;
     const onlyChangedImports = this.state.onlyChangedImports;
+    const testOff = (n) => hideTests && isTestPath(n?.id || n?.name || '');
+    const genOff = (n) => hideGenerated && isGenerated(n?.id);
     for (const n of this.nodes) {
-      // "Changed only" wins: show every git-touched file (incl. tests) and keep
-      // folder cells rebuilt from that set so foldering stays intact.
-      if (onlyGit && this._gitOverlaySig != null) {
-        n.off = !n.gitChanged;
-      } else {
-        n.off =
-          (hideTests && /\.(test|spec)\.[jt]sx?$/.test(n.name || '')) ||
-          (hideGenerated && isGenerated(n.id));
-      }
+      // Changed files stay in the "Changed only" view. Hide tests / generated
+      // still apply, including *.test.*, *.spec.*, __tests__/, tests/, and test/.
+      const noise = testOff(n) || genOff(n);
+      if (onlyGit && this._gitOverlaySig != null) n.off = !n.gitChanged || noise;
+      else n.off = noise;
     }
     // Typed hops (Prisma, jobs, method calls) should still reach their target
     // when "changed files only" is on — otherwise the write/job disappears.
     if (onlyGit && showHops) {
       for (const l of this.links) {
         if (!hopKindOf(l)) continue;
-        if (l.s?.gitChanged && l.t) l.t.off = false;
+        if (l.s?.gitChanged && l.t && !testOff(l.t) && !genOff(l.t)) l.t.off = false;
       }
     }
     for (const l of this.links) {
@@ -1135,6 +1155,8 @@ export class CodeGraphEngine extends React.Component {
     this.activeLinks = this.links.filter(l => !l.off);
     if (this.state.focusOn) this.applyFocusOverlay();
     else this.clearFocusMarks();
+    const shown = (this.active || []).length;
+    if (!this._dead && shown !== this.state.shownCount) this.setState({ shownCount: shown });
     this.kick(0.5);
   }
 
@@ -1150,8 +1172,9 @@ export class CodeGraphEngine extends React.Component {
   }
 
   fit() {
-    const ns = this.active || this.nodes;
-    if (!ns.length || !this.w) return;
+    const ns = this.active?.length ? this.active : (this.nodes?.length && !this.state.onlyGit ? this.nodes : null);
+    if (!ns?.length || !this.w) return;
+    if (!this.cells) this.buildCells(ns);
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const n of ns) {
       const e = extents(n);
@@ -1394,7 +1417,10 @@ export class CodeGraphEngine extends React.Component {
       return true;
     };
 
-    for (let i = 0; i < ns.length; i++) {
+    // A full pairwise pass on a 1,500-file repo never finishes before the sim cools,
+    // so files stay piled in the middle. The cell grid already separated them.
+    const pairwise = ns.length <= 220;
+    for (let i = 0; pairwise && i < ns.length; i++) {
       const a = ns[i];
       for (let j = i + 1; j < ns.length; j++) {
         const b = ns[j];
@@ -1507,7 +1533,7 @@ export class CodeGraphEngine extends React.Component {
       let area = 0;
       for (const n of nodes) {
         const e = extents(n);
-        area += (e.hw * 2 + NODE_GAP + 6) * (e.hh * 2 + NODE_GAP + 6);
+        area += (e.hw * 2 + NODE_GAP + 10) * (e.hh * 2 + NODE_GAP + 36);
       }
       area *= 3.4;
       const w = Math.max(180, Math.sqrt(area * 1.7));
@@ -1569,6 +1595,38 @@ export class CodeGraphEngine extends React.Component {
 
     this.cells = cells;
     this.frames = frames;
+    this.seedCellPositions(ns);
+  }
+
+  // Drop files onto a grid inside their folder cell immediately. The force sim
+  // only nudges a few pixels per frame, so a big repo otherwise stays piled at
+  // the origin while the camera zooms out to the empty folder grid.
+  seedCellPositions(ns) {
+    const buckets = new Map();
+    for (const n of ns || []) {
+      if (!n?.cellKey || !this.cells?.[n.cellKey]) continue;
+      let list = buckets.get(n.cellKey);
+      if (!list) buckets.set(n.cellKey, list = []);
+      list.push(n);
+    }
+    for (const [key, members] of buckets) {
+      const cell = this.cells[key];
+      const cols = Math.max(1, Math.ceil(Math.sqrt(members.length)));
+      const rows = Math.ceil(members.length / cols);
+      const padX = 28;
+      const padY = 36;
+      const innerW = Math.max(cols * 36, (cell.x1 - cell.x0) - padX * 2);
+      const innerH = Math.max(rows * 36, (cell.y1 - cell.y0) - padY * 2);
+      members.forEach((n, i) => {
+        if (n.fixed) return;
+        const c = i % cols;
+        const r = Math.floor(i / cols);
+        n.x = cell.x0 + padX + (c + 0.5) * (innerW / cols);
+        n.y = cell.y0 + padY + (r + 0.5) * (innerH / rows);
+        n.vx = 0;
+        n.vy = 0;
+      });
+    }
   }
 
   // keep every node inside its folder's cell
@@ -1602,6 +1660,7 @@ export class CodeGraphEngine extends React.Component {
     ctx.font = '10.5px "JetBrains Mono", ui-monospace, monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
+    this._folderLabelBoxes = [];
     for (const r of rects) {
       const w = r.x1 - r.x0, h = r.y1 - r.y0;
       const nested = (r.depth || 0) > 0;
@@ -1616,12 +1675,20 @@ export class CodeGraphEngine extends React.Component {
       const label = r.label || r.key || '';
       ctx.globalAlpha = folderFade;
       ctx.font = `${nested ? 9.5 : 10.5}px "JetBrains Mono", ui-monospace, monospace`;
-      if (ctx.measureText(label).width < w - 16) {
+      const lw = ctx.measureText(label).width;
+      if (lw < w - 16) {
         ctx.fillStyle = nested ? '#686c83' : '#9397ab';
         ctx.fillText(label, r.x0 + 10, r.y0 + 15);
+        const sx = vx + (r.x0 + 10) * k;
+        const sy = vy + (r.y0 + 15) * k;
+        this._folderLabelBoxes.push({
+          x0: sx - 3,
+          y0: sy - (nested ? 11 : 12) * k,
+          x1: sx + lw * k + 6,
+          y1: sy + 3 * k,
+        });
       }
     }
-    this._frameLabels = null;
 
     const q = this.state.query.trim().toLowerCase();
     const sel = this.state.selId ? this.byId[this.state.selId] : null;
@@ -1815,10 +1882,13 @@ export class CodeGraphEngine extends React.Component {
       ctx.globalAlpha = ringOn || changed ? Math.max(alpha, 0.9) : alpha * 0.55;
       ctx.stroke();
 
-      const showLabel = changed || (focus && on) || peek || (q && match) || (focusMode && (n.focusRole === 'seed' || n.focusPinned));
+      const hoverNode = n === this.hover || n === sel;
+      // Labels: changed files when they fit, everything else only while hovered
+      // or selected. Unchanged files never join the pile.
+      const showLabel = hoverNode || (q && match) || changed || (focusMode && (n.focusRole === 'seed' || n.focusPinned));
       if (showLabel) {
         labelQueue.push({
-          n, changed, on, alpha,
+          n, changed, on, alpha, hoverNode,
           name: n.name || n.label || '',
         });
       }
@@ -1857,54 +1927,73 @@ export class CodeGraphEngine extends React.Component {
   drawScreenLabels(queue, mono) {
     const ctx = this.ctx;
     if (!ctx || !queue?.length) return;
-    const placed = [];
-    const drawOne = (item, yShift) => {
+    const ranked = [...queue].sort((a, b) => {
+      const rank = (item) => (item.hoverNode ? 0 : item.changed ? 1 : 2);
+      const d = rank(a) - rank(b);
+      if (d) return d;
+      return (b.n.gitAdds || 0) - (a.n.gitAdds || 0);
+    });
+    const placed = [...(this._folderLabelBoxes || [])];
+    const hits = (b) => placed.some((p) => b.x0 < p.x1 && b.x1 > p.x0 && b.y0 < p.y1 && b.y1 > p.y0);
+    const drawOne = (item) => {
       const n = item.n;
       const sc = this.worldToScreen(n.x, n.y);
       const half = nodeSide(n) * this.view.k / 2;
       const name = item.name.length > 28 ? `${item.name.slice(0, 26)}…` : item.name;
+      if (!name) return;
       ctx.font = `600 11px ${mono}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'alphabetic';
       ctx.lineJoin = 'round';
       const nameW = ctx.measureText(name).width;
-      let nameY = item.changed ? sc.y - half - 16 - yShift : sc.y + half + 14;
-      let box = { x0: sc.x - nameW / 2 - 2, x1: sc.x + nameW / 2 + 2, y0: nameY - 12, y1: nameY + 3 };
-      const hits = (b) => placed.some((p) => b.x0 < p.x1 && b.x1 > p.x0 && b.y0 < p.y1 && b.y1 > p.y0);
-      if (hits(box)) {
-        nameY += item.changed ? -14 : 14;
-        box = { x0: box.x0, x1: box.x1, y0: nameY - 12, y1: nameY + 3 };
+      const bits = [];
+      if (item.changed && n.gitAdds) bits.push({ text: `+${n.gitAdds}`, color: GIT.add });
+      if (item.changed && n.gitDels) bits.push({ text: `${bits.length ? ' ' : ''}−${n.gitDels}`, color: GIT.del });
+      ctx.font = `11px ${mono}`;
+      const countW = bits.reduce((sum, bit) => sum + ctx.measureText(bit.text).width, 0);
+      const width = Math.max(nameW, countW);
+      const pad = 4;
+      const slots = [
+        item.changed ? sc.y - half - 18 : sc.y + half + 16,
+        item.changed ? sc.y + half + 16 : sc.y - half - 18,
+      ];
+      let chosen = null;
+      for (const nameY of slots) {
+        const countY = bits.length ? (nameY < sc.y ? nameY + 13 : nameY + 14) : nameY;
+        const y0 = Math.min(nameY - 13, countY - 12) - 2;
+        const y1 = Math.max(nameY + 4, countY + 4) + 2;
+        const box = { x0: sc.x - width / 2 - pad, x1: sc.x + width / 2 + pad, y0, y1 };
+        if (!hits(box)) { chosen = { nameY, box }; break; }
       }
-      if (hits(box) && !item.changed) return;
+      // Never paint overlapping names, including changed files. Hover still wins
+      // because it is placed first and claims the space.
+      if (!chosen) return;
+      const { nameY, box } = chosen;
       placed.push(box);
-      ctx.globalAlpha = item.on || item.changed ? 1 : 0.35;
+      ctx.font = `600 11px ${mono}`;
+      ctx.textAlign = 'center';
+      ctx.globalAlpha = item.on || item.changed || item.hoverNode ? 1 : 0.35;
       ctx.lineWidth = 3;
       ctx.strokeStyle = INK.bg;
       ctx.strokeText(name, sc.x, nameY);
       ctx.fillStyle = item.changed ? '#e9e9ed' : '#b3b6c8';
       ctx.fillText(name, sc.x, nameY);
-      if (!item.changed) return;
-      const countY = sc.y - half - 4;
-      const bits = [];
-      if (n.gitAdds) bits.push({ text: `+${n.gitAdds}`, color: GIT.add });
-      if (n.gitDels) bits.push({ text: `${bits.length ? ' ' : ''}−${n.gitDels}`, color: GIT.del });
+      if (!bits.length) return;
+      const countY = nameY < sc.y ? sc.y - half - 4 : nameY + 13;
       ctx.font = `11px ${mono}`;
-      const widths = bits.map((bit) => ctx.measureText(bit.text).width);
-      const total = widths.reduce((sum, w) => sum + w, 0);
-      let cursor = sc.x - total / 2;
+      let cursor = sc.x - countW / 2;
       ctx.textAlign = 'left';
       const joined = bits.map((bit) => bit.text).join('');
       ctx.strokeStyle = INK.bg;
       ctx.strokeText(joined, cursor, countY);
-      bits.forEach((bit, index) => {
+      bits.forEach((bit) => {
         ctx.fillStyle = bit.color;
         ctx.fillText(bit.text, cursor, countY);
-        cursor += widths[index];
+        cursor += ctx.measureText(bit.text).width;
       });
-      placed.push({ x0: sc.x - total / 2 - 2, x1: sc.x + total / 2 + 2, y0: countY - 11, y1: countY + 2 });
     };
     ctx.save();
-    for (const item of queue) drawOne(item, 0);
+    for (const item of ranked) drawOne(item);
     ctx.restore();
   }
 
@@ -2625,18 +2714,21 @@ export class CodeGraphEngine extends React.Component {
       focusSummary: this.state.focusSummary || this._focusView?.summary || '',
       focusShaPill: formatShaPill(this.props.gitInfo?.baseSha, this.props.gitInfo?.headSha),
       focusSeedChips: (() => {
-        const ids = this.state.focusSeedMode === 'picked'
+        const ids = (this.state.focusSeedMode === 'picked'
           ? this.state.focusSeeds
-          : (this.nodes || []).filter((n) => n.gitChanged && !(this.state.focusHideTests && isTestPath(n.id))).map((n) => n.id);
+          : (this.nodes || []).filter((n) => n.gitChanged && !(this.state.focusHideTests && isTestPath(n.id))).map((n) => n.id))
+          .filter((id) => shortDirLabel(id).trim());
         return ids.slice(0, 4).map((id) => ({
           id,
           label: shortDirLabel(id),
           removable: this.state.focusSeedMode === 'picked',
         }));
       })(),
-      focusSeedMore: Math.max(0, (this.state.focusSeedMode === 'picked'
-        ? this.state.focusSeeds.length
-        : (this.nodes || []).filter((n) => n.gitChanged && !(this.state.focusHideTests && isTestPath(n.id))).length) - 4),
+      focusSeedMore: Math.max(0, ((this.state.focusSeedMode === 'picked'
+        ? this.state.focusSeeds
+        : (this.nodes || []).filter((n) => n.gitChanged && !(this.state.focusHideTests && isTestPath(n.id))).map((n) => n.id))
+        .filter((id) => shortDirLabel(id).trim()).length) - 4),
+      emptyGraph: (this.nodes?.length || 0) > 0 && (this.active?.length || 0) === 0,
       focusPinChips: this.state.focusPins.map((id) => ({
         id,
         label: shortDirLabel(id),
