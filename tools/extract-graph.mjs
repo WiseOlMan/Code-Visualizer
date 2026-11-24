@@ -924,6 +924,8 @@ export function* extractGraphStream(repoPathOrWorkspace, { outDir, batchSize = 3
       continue;
     }
     contents.set(f.rel, src);
+    const node = nodesById.get(f.rel);
+    if (node) node.lines = src ? src.split('\n').length : 0;
     const code = stripComments(src);
     for (const ref of extractImportRefs(code)) {
       const target =

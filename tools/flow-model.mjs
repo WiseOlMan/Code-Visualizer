@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { analyzeModules, normalizeBody } from './functions.mjs';
 import { applyMainMarks, deriveFlows, diffFunctions, explainFunction } from './flow.mjs';
+import { bodyDiffCounts } from '../client/src/diffMark.js';
 import { listRepoSources } from './extract-graph.mjs';
 
 function git(cwd, args) {
@@ -52,9 +53,13 @@ function publish(view) {
       for (const file of column.files || []) {
         for (const box of file.functions || []) {
           const explained = explainFunction(box);
+          const counts = bodyDiffCounts(box.baseBody, box.headBody || box.body, box.status);
           box.whatItDoes = explained.whatItDoes;
           box.whatChanged = explained.whatChanged;
           box.diff = explained.diff;
+          box.adds = counts.adds;
+          box.dels = counts.dels;
+          box.fnLines = (box.endLine && box.line) ? Math.max(1, box.endLine - box.line + 1) : counts.lines;
           delete box.body;
           delete box.baseBody;
           delete box.headBody;

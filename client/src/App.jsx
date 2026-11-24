@@ -151,6 +151,7 @@ export default function App() {
   const [initialOnlyGit, setInitialOnlyGit] = useState(false);
   const [explorerView, setExplorerViewState] = useState(readExplorerView);
   const [flowJump, setFlowJump] = useState(null);
+  const [graphApi, setGraphApi] = useState(null);
 
   function setExplorerView(next) {
     setExplorerViewState(next);
@@ -583,193 +584,22 @@ export default function App() {
     );
   }
 
+  const menu = {
+    query: searchQuery,
+    onQuery: setSearchQuery,
+    scope: searchScope,
+    onToggleScope: () => setSearchScope((s) => (s === 'repo' ? 'all' : 'repo')),
+    hits: allSearchHits,
+    onPick: pickSearchHit,
+    onOpenRepo: openPicker,
+    tabs,
+    activeId,
+    onActivate: setActiveId,
+    onClose: closeTab,
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      {tabs.length > 0 && (
-        <div style={{
-          flex: 'none', display: 'flex', alignItems: 'stretch', position: 'relative',
-          borderBottom: '1px solid var(--color-neutral-900)', background: 'var(--color-bg)',
-          minHeight: 40,
-        }}>
-          <div style={{
-            position: 'absolute', left: '50%', top: 0, height: '100%', transform: 'translateX(-50%)',
-            display: 'flex', alignItems: 'center', zIndex: 2, pointerEvents: 'none',
-          }}>
-            <div role="tablist" aria-label="Explorer view" style={{
-              display: 'flex', pointerEvents: 'auto',
-              border: '1px solid #3f424d', borderRadius: 999, overflow: 'hidden', background: '#161826',
-            }}>
-              {['graph', 'flow'].map((id) => {
-                const on = explorerView === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    role="tab"
-                    aria-selected={on}
-                    onClick={() => setExplorerView(id)}
-                    style={{
-                      border: 'none', cursor: 'pointer', font: 'inherit', fontSize: 12,
-                      padding: '5px 12px',
-                      background: on ? '#2a2740' : 'transparent',
-                      color: on ? '#f5f4ff' : '#b2b6ca',
-                    }}
-                  >{id === 'graph' ? 'Graph' : 'Flow'}</button>
-                );
-              })}
-            </div>
-          </div>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'stretch', minWidth: 0, overflowX: 'auto' }}>
-            {tabs.map((tab) => {
-              const on = tab.id === activeId;
-              return (
-                <div
-                  key={tab.id}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '0 4px 0 12px',
-                    borderRight: '1px solid var(--color-neutral-900)',
-                    background: on ? 'var(--color-surface)' : 'transparent',
-                    maxWidth: 220, minWidth: 96,
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setActiveId(tab.id)}
-                    style={{
-                      flex: 1, minWidth: 0, border: 'none', background: 'transparent',
-                      color: on ? 'var(--color-text)' : 'var(--color-neutral-500)',
-                      fontFamily: 'inherit', fontSize: 12, textAlign: 'left',
-                      padding: '8px 0', cursor: 'pointer',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}
-                    title={tab.root || tab.title}
-                  >
-                    {tab.title}{tab.busy ? '…' : ''}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-icon btn-ghost"
-                    title="Close tab"
-                    aria-label={`Close ${tab.title}`}
-                    onClick={() => closeTab(tab.id)}
-                    style={{ width: 28, height: 28, flex: 'none', fontSize: 12, color: 'var(--color-neutral-600)' }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              );
-            })}
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={openPicker}
-              title="Open another repo"
-              aria-label="Open another repo"
-              style={{
-                flex: 'none', width: 36, padding: 0, border: 'none',
-                borderRight: '1px solid var(--color-neutral-900)',
-                color: 'var(--color-neutral-400)', fontSize: 18, lineHeight: 1,
-              }}
-            >
-              +
-            </button>
-          </div>
-
-          <div ref={searchWrapRef} style={{
-            flex: 'none', display: 'flex', alignItems: 'center',
-            borderLeft: '1px solid var(--color-neutral-900)',
-            position: 'relative', padding: '0 6px',
-          }}>
-            {searchOpen ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: 300 }}>
-                <input
-                  className="input"
-                  autoFocus
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={searchScope === 'all' ? 'Search all repos…' : 'Search this repo…'}
-                  style={{ flex: 1, minWidth: 0, fontSize: 12, padding: '5px 8px', minHeight: 30 }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') {
-                      setSearchOpen(false);
-                      setSearchQuery('');
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  title={searchScope === 'all' ? 'Searching all open repos' : 'Searching this repo'}
-                  onClick={() => setSearchScope((s) => (s === 'repo' ? 'all' : 'repo'))}
-                  style={{
-                    flex: 'none', fontSize: 10, padding: '4px 7px', whiteSpace: 'nowrap',
-                    border: '1px solid',
-                    color: searchScope === 'all' ? 'var(--color-accent-300)' : 'var(--color-neutral-500)',
-                    borderColor: searchScope === 'all' ? 'var(--color-accent-700)' : 'var(--color-neutral-800)',
-                  }}
-                >
-                  {searchScope === 'all' ? 'All' : 'Repo'}
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-icon btn-ghost"
-                title="Search"
-                aria-label="Search"
-                onClick={() => setSearchOpen(true)}
-                style={{
-                  width: 34, height: 34,
-                  color: searchQuery ? 'var(--color-accent-300)' : 'var(--color-neutral-400)',
-                }}
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
-              </button>
-            )}
-
-            {searchOpen && searchScope === 'all' && searchQuery.trim() && (
-              <div style={{
-                position: 'absolute', top: '100%', right: 0, zIndex: 30, width: 320,
-                marginTop: 4, maxHeight: 320, overflowY: 'auto',
-                background: 'var(--color-surface)', border: '1px solid var(--color-neutral-800)',
-                borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)',
-              }}>
-                {allSearchHits.length === 0 ? (
-                  <div style={{ padding: 10, fontSize: 12, color: 'var(--color-neutral-500)' }}>No matches</div>
-                ) : allSearchHits.map((hit) => (
-                  <button
-                    key={hit.key}
-                    type="button"
-                    onClick={() => pickSearchHit(hit)}
-                    style={{
-                      display: 'flex', flexDirection: 'column', gap: 2, width: '100%',
-                      textAlign: 'left', padding: '8px 10px', border: 'none',
-                      borderBottom: '1px solid var(--color-neutral-900)',
-                      background: 'transparent', color: 'inherit', cursor: 'pointer',
-                      fontFamily: 'inherit',
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-bg)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <span style={{ fontSize: 12 }}>{hit.label}</span>
-                    <span style={{
-                      fontSize: 10.5, color: 'var(--color-neutral-500)',
-                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {hit.repo} · {hit.path}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh', overflow: 'hidden', background: '#161826' }}>
 
       <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
         {tabs.length === 0 && !showPicker && (
@@ -825,7 +655,11 @@ export default function App() {
                 }}
                 focusNodeId={on ? focusRequest?.nodeId : null}
                 focusToken={on ? focusRequest?.token : null}
+                focusPanel={on ? focusRequest?.panel : null}
                 viewActive={on && explorerView === 'graph'}
+                onView={setExplorerView}
+                menu={menu}
+                onGraphApi={on ? setGraphApi : undefined}
                 onShowInFlow={on ? (file) => {
                   setFlowJump({ file, token: Date.now() });
                   setExplorerView('flow');
@@ -839,11 +673,19 @@ export default function App() {
             <FlowView
               root={activeTab.root}
               gitInfo={activeTab.gitInfo || null}
+              repo={activeTab.title}
               focusFile={flowJump?.file || ''}
               focusToken={flowJump?.token || 0}
+              onView={setExplorerView}
+              menu={menu}
+              graphApi={graphApi}
               onShowInGraph={(file) => {
                 setExplorerView('graph');
                 setFocusRequest({ nodeId: file, token: Date.now() });
+              }}
+              onOpenSource={(file) => {
+                setExplorerView('graph');
+                setFocusRequest({ nodeId: file, token: Date.now(), panel: 'source' });
               }}
             />
           </div>

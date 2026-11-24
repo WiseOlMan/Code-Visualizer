@@ -1,8 +1,8 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { formatShaPill } from './focusView.js';
 import { readFlowParams, writeExplorerParams } from './explorerView.js';
-
-const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+import { ExplorerChrome } from './ExplorerChrome.jsx';
+import { bodyDiffCounts, fillFractions } from './diffMark.js';
+import './explorer.css';
 
 function markView(box, mode) {
   const mark = box?.marks?.[mode] || box?.marks?.pr || 'unchanged';
@@ -14,18 +14,12 @@ function markView(box, mode) {
   return { tag: null, ghost: false, fade: false };
 }
 
-function fileAccent(fns, mode) {
-  const marks = fns.map((fn) => fn.marks?.[mode] || 'unchanged');
-  if (marks.includes('deleted')) return '#c45b68';
-  if (marks.some((mark) => mark === 'added' || mark === 'edited' || mark === 'moved')) return '#3ecf8e';
-  return null;
-}
-
-function edgePaint(edge, mode) {
-  if (edge.kind === 'queue') return { color: '#d7c4a1', dash: '1.5 4', label: 'queued' };
-  if (edge.kind === 'data') return { color: '#e0a36a', dash: '5 4', label: edge.table ? `data ${edge.table}` : 'data' };
-  if (edge.fresh && mode === 'pr') return { color: '#3ecf8e', dash: '5 4', label: edge.mode || '' };
-  return { color: '#7ea2d6', dash: null, label: edge.mode || '' };
+function edgePaint(edge, onPath) {
+  if (edge.kind === 'queue') return { color: '#c9b896', dash: '1.5 4', label: 'queued' };
+  if (edge.kind === 'data') return { color: edge.fresh ? '#58d68d' : '#6ec8d4', dash: '5 4', label: edge.table ? `data ${edge.table}` : 'data' };
+  if (edge.fresh) return { color: '#58d68d', dash: '5 4', label: edge.mode || '' };
+  if (onPath) return { color: '#9184d9', dash: null, label: edge.mode || '' };
+  return { color: '#4d5272', dash: null, label: edge.mode || '' };
 }
 
 function findBox(flow, id) {
@@ -39,20 +33,66 @@ function findBox(flow, id) {
   return null;
 }
 
-function Tag({ kind, label }) {
-  const ghost = kind === 'deleted';
-  const moved = kind === 'moved';
+function splitPath(file) {
+  const slash = String(file || '').lastIndexOf('/');
+  if (slash < 0) return { dir: '', name: file || '' };
+  return { dir: file.slice(0, slash + 1), name: file.slice(slash + 1) };
+}
+
+function fnStats(fn) {
+  if (fn.adds != null || fn.dels != null) {
+    return { adds: fn.adds || 0, dels: fn.dels || 0, lines: fn.fnLines || fn.adds || 1 };
+  }
+  const counts = bodyDiffCounts(fn.baseBody, fn.headBody || fn.body, fn.status);
+  const span = fn.endLine && fn.line ? Math.max(1, fn.endLine - fn.line + 1) : counts.lines;
+  return { ...counts, lines: span };
+}
+
+function ancestorsOf(flow, selectedId) {
+  const keep = new Set();
+  if (!selectedId) return keep;
+  const incoming = new Map();
+  for (const edge of flow?.edges || []) {
+    if (!incoming.has(edge.to)) incoming.set(edge.to, []);
+    incoming.get(edge.to).push(edge.from);
+  }
+  const stack = [selectedId];
+  keep.add(selectedId);
+  while (stack.length) {
+    const id = stack.pop();
+    for (const src of incoming.get(id) || []) {
+      if (keep.has(src)) continue;
+      keep.add(src);
+      stack.push(src);
+    }
+  }
+  for (const edge of flow?.edges || []) {
+    if (edge.from === selectedId) keep.add(edge.to);
+  }
+  return keep;
+}
+
+function DiffSquare({ adds, dels, lines, status, size }) {
+  const mapped = status === 'added' || status === 'A' ? 'A' : status === 'deleted' || status === 'D' ? 'D' : status;
+  const fr = fillFractions(adds, dels, lines, mapped);
+  const radius = Math.max(3, size * 0.22);
+  if (!fr) {
+    return <span className="dsq hollow" style={{ width: size, height: size, borderRadius: radius }} />;
+  }
+  const g = fr.g * 100;
+  const r = fr.r * 100;
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center',
-      padding: '1px 6px', borderRadius: 999, fontSize: 10, letterSpacing: '0.02em',
-      background: ghost ? '#3c242b' : moved ? '#3a3224' : '#1c3d30',
-      color: ghost ? '#ffb0b8' : moved ? '#e7d3b0' : '#b8f5cf',
-    }}>{label}</span>
+    <span className="dsq" style={{ width: size, height: size, borderRadius: radius }}>
+      <i style={{ bottom: 0, height: `${g}%`, background: 'rgba(46,255,122,.85)' }} />
+      {dels > 0 && <i style={{ bottom: `${g}%`, height: `${Math.max(r, (2.5 / size) * 100)}%`, background: 'rgba(255,77,94,.9)' }} />}
+    </span>
   );
 }
 
-export function FlowView({ root, gitInfo, focusFile, focusToken, onShowInGraph }) {
+export function FlowView({
+  root, gitInfo, focusFile, focusToken, onShowInGraph, onOpenSource,
+  onView, menu, graphApi, repo,
+}) {
   const initial = readFlowParams();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -63,6 +103,8 @@ export function FlowView({ root, gitInfo, focusFile, focusToken, onShowInGraph }
   const [scope, setScope] = useState(initial.scope);
   const [arrows, setArrows] = useState([]);
   const [laidOut, setLaidOut] = useState(0);
+  const [scale, setScale] = useState(1);
+  const [hoverId, setHoverId] = useState('');
   const canvasRef = useRef(null);
   const arrowSig = useRef('');
   const jumpToken = useRef(0);
@@ -133,11 +175,20 @@ export function FlowView({ root, gitInfo, focusFile, focusToken, onShowInGraph }
   }, [data, mark]);
 
   const selected = findBox(flow, selectedId);
+  const keep = useMemo(() => ancestorsOf(flow, selectedId), [flow, selectedId]);
   const alsoById = useMemo(() => {
     const map = new Map();
     for (const row of flow?.alsoCalled || []) map.set(row.id, row.calls);
     return map;
   }, [flow]);
+  const gitByFile = useMemo(() => {
+    const map = new Map();
+    for (const file of gitInfo?.files || []) {
+      if (file.graphId) map.set(file.graphId, file);
+      if (file.path) map.set(file.path, file);
+    }
+    return map;
+  }, [gitInfo]);
 
   useLayoutEffect(() => {
     document.documentElement.dataset.explorerView = 'flow';
@@ -160,15 +211,17 @@ export function FlowView({ root, gitInfo, focusFile, focusToken, onShowInGraph }
       if (!from || !to) continue;
       const a = from.getBoundingClientRect();
       const b = to.getBoundingClientRect();
+      const sameCol = b.left < a.right - 8;
       next.push({
         ...edge,
-        x1: Math.round(a.right - origin.left),
+        sameCol,
+        x1: Math.round((sameCol ? a.left : a.right) - origin.left),
         y1: Math.round(a.top + a.height / 2 - origin.top),
         x2: Math.round(b.left - origin.left),
         y2: Math.round(b.top + b.height / 2 - origin.top),
       });
     }
-    const sig = `${flow.id}:${next.map((edge) => `${edge.kind}:${edge.from}:${edge.to}:${edge.x1}:${edge.y1}:${edge.x2}:${edge.y2}`).join('|')}`;
+    const sig = `${flow.id}:${scale}:${next.map((edge) => `${edge.kind}:${edge.from}:${edge.to}:${edge.x1}:${edge.y1}:${edge.x2}:${edge.y2}`).join('|')}`;
     if (arrowSig.current !== sig) {
       arrowSig.current = sig;
       document.documentElement.dataset.explorerReady = '0';
@@ -176,7 +229,7 @@ export function FlowView({ root, gitInfo, focusFile, focusToken, onShowInGraph }
       setLaidOut(sig || 'drawn');
     }
     return undefined;
-  }, [flow, mark, showingIndex, data, selectedId]);
+  }, [flow, mark, showingIndex, data, selectedId, scale]);
 
   useEffect(() => {
     if (loading || error || !laidOut) return undefined;
@@ -187,365 +240,295 @@ export function FlowView({ root, gitInfo, focusFile, focusToken, onShowInGraph }
     return () => cancelAnimationFrame(id);
   }, [loading, error, laidOut]);
 
-  const sha = formatShaPill(data?.baseSha, data?.headSha);
   const modes = data?.modes || [
     { id: 'before', label: 'main' },
     { id: 'pr', label: 'this PR' },
   ];
+  const steps = flow?.steps || [];
+  const stepIndex = steps.findIndex((step) => step.id === selectedId);
+  const changedFns = (flow?.columns || []).flatMap((column) => column.files.flatMap((file) => file.functions))
+    .filter((fn) => fn.status && fn.status !== 'unchanged').length;
+  const newCalls = (flow?.edges || []).filter((edge) => edge.fresh).length;
+  const risky = (flow?.edges || []).filter((edge) => edge.fresh && (edge.kind === 'queue' || edge.kind === 'data')).length;
+  const colW = Math.round(270 * scale);
+
+  function fileStat(file) {
+    const git = gitByFile.get(file.file);
+    let adds = Number(git?.additions) || 0;
+    let dels = Number(git?.deletions) || 0;
+    let lines = 0;
+    if (!git) {
+      for (const fn of file.functions) {
+        const stats = fnStats(fn);
+        adds += stats.adds;
+        dels += stats.dels;
+        lines = Math.max(lines, stats.lines);
+      }
+    }
+    for (const fn of file.functions) lines = Math.max(lines, fn.endLine || 0);
+    const status = git?.status || (adds + dels ? 'M' : '');
+    return { adds, dels, lines: lines || adds + dels || 24, status };
+  }
+
+  const status = showingIndex
+    ? 'This change is wide · open one function'
+    : `Flow ${flows.length ? Math.min(flowNo, flows.length) : 1} of ${Math.max(flows.length, 1)}${flow ? ` · ${flow.boxCount || ''} boxes` : ''}`;
 
   return (
-    <div style={{
-      display: 'flex', width: '100%', height: '100%', minHeight: 0,
-      background: '#161826', color: '#e9e9ed', fontFamily: 'var(--font-body)',
-    }}>
-      <aside style={{
-        flex: 'none', width: 248, borderRight: '1px solid #292b36',
-        display: 'flex', flexDirection: 'column', minHeight: 0,
-      }}>
-        <div style={{
-          padding: '14px 14px 8px', fontSize: 10, letterSpacing: '0.08em', color: '#8b90a6',
-        }}>FLOW, IN CALL ORDER</div>
-        <div style={{ flex: 1, overflow: 'auto', padding: '0 8px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {(flow?.steps || []).map((step) => {
-            const on = step.id === selectedId;
-            return (
-              <button
-                key={step.id}
-                type="button"
-                onClick={() => setSelectedId(step.id)}
-                style={{
-                  display: 'flex', gap: 8, textAlign: 'left', width: '100%',
-                  padding: '7px 8px', borderRadius: 8, cursor: 'pointer', font: 'inherit',
-                  border: '1px solid transparent',
-                  background: on ? '#2a2740' : 'transparent',
-                  color: 'inherit',
-                }}
-              >
-                <span style={{
-                  flex: 'none', width: 18, height: 18, borderRadius: 99, marginTop: 1,
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  background: on ? '#9184d9' : '#2a2d3c', color: on ? '#161826' : '#cfd3e5',
-                  fontSize: 10,
-                }}>{step.n}</span>
-                <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 12.5, fontFamily: MONO }}>{step.label}</span>
-                  <span style={{ display: 'block', fontSize: 10.5, color: '#8b90a6', marginTop: 2 }}>
-                    {step.entryKind ? `${step.entryKind} entry` : (step.hint || step.file.split('/').pop())}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-          {!loading && flow && !flow.steps?.length && (
-            <div style={{ fontSize: 12, color: '#8b90a6', padding: 8 }}>No steps in this flow.</div>
-          )}
-        </div>
-        <div style={{
-          padding: '10px 14px 14px', borderTop: '1px solid #292b36',
-          display: 'flex', flexDirection: 'column', gap: 6, fontSize: 10.5, color: '#8b90a6',
-        }}>
-          <Key swatch="#7ea2d6" label="call" />
-          <Key swatch="#3ecf8e" dash label="new call" />
-          <Key swatch="#d7c4a1" dot label="queued" />
-          <Key swatch="#e0a36a" dash label="data" />
-        </div>
-      </aside>
-
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        <div style={{
-          flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: 12, padding: '10px 14px', borderBottom: '1px solid #292b36',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-            <button type="button" onClick={() => setFlowNo((n) => Math.max(1, n - 1))} disabled={flowNo <= 1 || showingIndex} style={pagerBtn}>‹</button>
-            <div style={{ fontSize: 12.5 }}>
-              <span>Flow {flows.length ? Math.min(flowNo, flows.length) : 1} of {Math.max(flows.length, 1)}</span>
-              {flow && !showingIndex && (
-                <span style={{ color: '#8b90a6' }}> · {flow.boxCount} boxes</span>
-              )}
-            </div>
-            <button type="button" onClick={() => setFlowNo((n) => Math.min(flows.length, n + 1))} disabled={!flows.length || flowNo >= flows.length || showingIndex} style={pagerBtn}>›</button>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ display: 'flex', border: '1px solid #3f424d', borderRadius: 999, overflow: 'hidden' }}>
-              {modes.map((item) => {
-                const on = (item.id === 'before' ? mark === 'before' : item.id === 'main' ? mark === 'main' : mark === 'pr');
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setMark(item.id)}
-                    style={{
-                      border: 'none', cursor: 'pointer', font: 'inherit', fontSize: 12,
-                      padding: '5px 10px',
-                      background: on ? '#2a2740' : 'transparent',
-                      color: on ? '#f5f4ff' : '#b2b6ca',
-                    }}
-                  >{item.label}</button>
-                );
-              })}
-            </div>
-            {sha && (
-              <span style={{
-                fontFamily: MONO, fontSize: 11, color: '#d2cefd',
-                border: '1px solid #9184d9', background: '#2b2741', borderRadius: 999, padding: '4px 8px',
-              }}>{sha}</span>
-            )}
-          </div>
-        </div>
-
-        <div style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'auto' }}>
-          {loading && <Empty>Reading functions…</Empty>}
-          {!loading && error && <Empty>{error}</Empty>}
+    <div className={`ex-root${selected ? ' sheet-open' : ''}`}>
+      <ExplorerChrome
+        view="flow"
+        onView={onView}
+        git={gitInfo}
+        repo={repo || data?.repo}
+        status={status}
+        summary={flow && !showingIndex ? { kind: 'flow', functions: changedFns, calls: newCalls, risky } : null}
+        zoom={`${Math.round(scale * 100)}%`}
+        onZoomIn={() => setScale((s) => Math.min(1.8, Math.round((s + 0.1) * 10) / 10))}
+        onZoomOut={() => setScale((s) => Math.max(0.6, Math.round((s - 0.1) * 10) / 10))}
+        api={graphApi}
+        menu={menu}
+        sheetOpen={!!selected}
+        mark={{ value: mark, modes, onChange: setMark }}
+      />
+      <div className="ex-stage">
+        <div className="flow-scroll">
+          {loading && <div className="flow-empty">Reading functions…</div>}
+          {!loading && error && <div className="flow-empty">{error}</div>}
           {!loading && !error && data && !flows.length && (
-            <Empty>No changed functions to lay out against {data.baseLabel || 'the compare base'}.</Empty>
+            <div className="flow-empty">No changed functions to lay out against {data.baseLabel || 'the compare base'}.</div>
           )}
           {!loading && !error && showingIndex && (
-            <div style={{ padding: 22, maxWidth: 640 }}>
+            <div className="flow-index">
               <div style={{ fontSize: 16, marginBottom: 6 }}>This change is wide</div>
               <div style={{ fontSize: 12.5, color: '#b2b6ca', marginBottom: 14, lineHeight: 1.45 }}>
                 More than {data.boxCap} function boxes or more than {data.columnCap} columns.
                 Open one changed function to see its own flow.
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {(data.index || []).map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => { setScope(item.id); setSelectedId(item.id); setFlowNo(1); }}
-                    style={{
-                      textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                      background: '#1c1e2c', border: '1px solid #313445', color: 'inherit', font: 'inherit',
-                    }}
-                  >
-                    <span style={{ fontFamily: MONO, fontSize: 12.5 }}>{item.name}()</span>
-                    <span style={{ display: 'block', marginTop: 3, fontSize: 11, color: '#8b90a6' }}>
-                      {item.file}:{item.line} · {item.status}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              {(data.index || []).map((item) => (
+                <button key={item.id} type="button" onClick={() => { setScope(item.id); setSelectedId(item.id); setFlowNo(1); }}>
+                  <span className="mono">{item.name}()</span>
+                  <span style={{ display: 'block', marginTop: 3, fontSize: 11, color: '#8b90a6' }}>{item.file}:{item.line} · {item.status}</span>
+                </button>
+              ))}
             </div>
           )}
           {!loading && !error && flow && !showingIndex && (
-            <div ref={canvasRef} style={{ position: 'relative', minHeight: '100%', padding: '22px 18px 40px' }}>
-              {scope && (
-                <button
-                  type="button"
-                  onClick={() => { setScope(''); setFlowNo(1); }}
-                  style={{
-                    marginBottom: 12, border: 'none', background: 'none', color: '#9184d9',
-                    cursor: 'pointer', font: 'inherit', fontSize: 12, padding: 0,
-                  }}
-                >All changed functions</button>
-              )}
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 84, position: 'relative', zIndex: 1 }}>
-                {flow.columns.map((column) => (
-                  <div key={column.index} style={{ width: 280, flex: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <div style={{ fontSize: 11, color: '#b2b6ca', letterSpacing: '0.02em' }}>
-                      <span style={{ color: '#9184d9', marginRight: 6 }}>{column.index + 1}</span>
-                      {column.label}
-                    </div>
-                    {column.files.map((file) => {
-                      const accent = fileAccent(file.functions, mark);
-                      return (
-                        <div key={file.file} style={{
-                          background: '#1c1e2c',
-                          border: '1px solid #313445',
-                          borderLeft: accent ? `3px solid ${accent}` : '1px solid #313445',
-                          borderRadius: 10, padding: '8px 8px 6px',
-                        }}>
-                          <div style={{
-                            fontFamily: MONO, fontSize: 10.5, color: '#8b90a6',
-                            padding: '2px 6px 8px', wordBreak: 'break-all',
-                          }}>{file.file}</div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div ref={canvasRef} className="flow-board">
+              <div className="flow-top">
+                {scope && (
+                  <button type="button" onClick={() => { setScope(''); setFlowNo(1); }}>All</button>
+                )}
+                <button type="button" onClick={() => setFlowNo((n) => Math.max(1, n - 1))} disabled={flowNo <= 1} aria-label="Previous flow">‹</button>
+                <span>Flow {Math.min(flowNo, flows.length)} of {Math.max(flows.length, 1)}</span>
+                <button type="button" onClick={() => setFlowNo((n) => Math.min(flows.length, n + 1))} disabled={!flows.length || flowNo >= flows.length} aria-label="Next flow">›</button>
+              </div>
+              <div className="flow-cols" style={{ gap: Math.round(36 * scale) }}>
+                {flow.columns.map((column) => {
+                  const changed = column.files.some((file) => file.functions.some((fn) => fn.status && fn.status !== 'unchanged'));
+                  const on = column.files.some((file) => file.functions.some((fn) => fn.id === selectedId));
+                  return (
+                    <div key={column.index} className="flow-col" style={{ width: colW }}>
+                      <div className={`flow-step${on ? ' on' : ''}`}>
+                        <span className="n">{column.index + 1}</span>
+                        <span className="l mono">{column.label}</span>
+                        {changed && <span className="dot" />}
+                      </div>
+                      {column.files.map((file) => {
+                        const parts = splitPath(file.file);
+                        const stat = fileStat(file);
+                        const side = Math.round(12 + 0.6 * Math.sqrt(stat.lines || 1));
+                        const offCount = file.functions.filter((fn) => fn.dimmed || !fn.onPath).length;
+                        return (
+                          <div key={file.file} className="flow-file">
+                            <div className="flow-file head">
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div className="d">{parts.dir}</div>
+                                <div className="f">{parts.name}</div>
+                              </div>
+                              <DiffSquare adds={stat.adds} dels={stat.dels} lines={stat.lines} status={stat.status} size={side} />
+                            </div>
                             {file.functions.map((fn) => {
                               const view = markView(fn, mark);
-                              const on = fn.id === selectedId;
+                              const stats = fnStats(fn);
+                              const onFn = fn.id === selectedId;
                               const offPath = fn.dimmed || !fn.onPath;
+                              const faded = selectedId && !keep.has(fn.id);
+                              const changed = fn.status && fn.status !== 'unchanged';
                               return (
                                 <button
                                   key={fn.id}
                                   type="button"
                                   data-fn={fn.id}
+                                  className={`flow-fn${onFn ? ' sel' : ''}${hoverId === fn.id ? ' hov' : ''}${view.ghost ? ' ghost' : ''}${!changed && !view.ghost ? ' quiet' : ''}${faded || view.fade ? ' fade' : ''}`}
                                   onClick={() => setSelectedId(fn.id)}
-                                  style={{
-                                    textAlign: 'left', width: '100%', cursor: 'pointer', font: 'inherit',
-                                    padding: '7px 8px', borderRadius: 8,
-                                    background: on ? '#2a2740' : 'transparent',
-                                    border: `1px ${offPath || view.ghost ? 'dashed' : 'solid'} ${on ? '#9184d9' : view.ghost ? '#a85a66' : '#3a3e52'}`,
-                                    color: view.ghost ? '#e7b4bc' : '#e9e9ed',
-                                    opacity: (view.ghost || view.fade || offPath) ? (view.ghost ? 0.62 : 0.55) : 1,
-                                  }}
+                                  onMouseEnter={() => setHoverId(fn.id)}
+                                  onMouseLeave={() => setHoverId('')}
                                 >
-                                  <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                                    <span style={{ fontFamily: MONO, fontSize: 12 }}>{fn.label}</span>
-                                    {view.tag === 'moved' && <Tag kind="moved" label={fn.movedFromLabel ? `moved from ${fn.movedFromLabel}` : 'moved'} />}
-                                    {view.tag && view.tag !== 'moved' && <Tag kind={view.tag} label={view.tag} />}
+                                  {changed && (
+                                    <DiffSquare adds={stats.adds} dels={stats.dels} lines={stats.lines} status={fn.status} size={13} />
+                                  )}
+                                  <span className="n">{fn.label}</span>
+                                  <span className="m">
+                                    {view.tag === 'moved' && (
+                                      <span className="flow-new" style={{ color: '#d2cefd' }} title={fn.movedFromLabel ? `moved from ${fn.movedFromLabel}` : 'moved'}>
+                                        {fn.movedFromLabel ? `from ${String(fn.movedFromLabel).split('/').pop()}` : 'moved'}
+                                      </span>
+                                    )}
+                                    {fn.status === 'added' && <span className="flow-new">NEW</span>}
+                                    {stats.adds > 0 && changed && <span className="flow-plus">+{stats.adds}</span>}
+                                    {stats.dels > 0 && <span className="flow-minus">−{stats.dels}</span>}
+                                    {view.tag === 'deleted' && <span className="flow-minus">deleted</span>}
                                   </span>
-                                  {offPath && !view.ghost && (
-                                    <span style={{ display: 'block', marginTop: 3, fontSize: 10, color: '#8b90a6' }}>not on this path</span>
-                                  )}
-                                  {!!alsoById.get(fn.id)?.length && (
-                                    <span style={{
-                                      display: 'inline-flex', marginTop: 6, padding: '2px 6px', borderRadius: 999,
-                                      background: '#262838', color: '#b2b6ca', fontSize: 10,
-                                    }}>
-                                      also called {alsoById.get(fn.id).map((call) => call.name).join(', ')}
-                                    </span>
-                                  )}
                                 </button>
                               );
                             })}
+                            {offCount > 0 && (
+                              <div className={`flow-more${selectedId ? ' fade' : ''}`}>+{offCount} not on this path</div>
+                            )}
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
+                        );
+                      })}
+                    </div>
+                  );
+                })}
               </div>
               <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible' }}>
-                <defs>
-                  <marker id="flow-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                    <path d="M0,0 L7,3 L0,6 Z" fill="#7ea2d6" />
-                  </marker>
-                </defs>
-                {arrows.map((edge, index) => {
-                  const paint = edgePaint(edge, mark);
-                  const lane = index - (arrows.length - 1) / 2;
-                  const yShift = edge.kind === 'queue' ? -7 : edge.kind === 'data' ? 7 : 0;
-                  const y1 = edge.y1 + yShift;
-                  const y2 = edge.y2 + yShift;
-                  const span = Math.max(24, edge.x2 - edge.x1);
-                  const xMid = edge.x1 + Math.min(56, span * 0.42) + lane * 7;
-                  const d = `M ${edge.x1} ${y1} H ${xMid} V ${y2} H ${edge.x2 - 7}`;
-                  const label = paint.label || '';
-                  const lx = edge.x2 - 10;
-                  const ly = y2 - 7;
+                {arrows.map((edge) => {
+                  const onPath = !selectedId || (keep.has(edge.from) && (keep.has(edge.to) || edge.from === selectedId));
+                  const paint = edgePaint(edge, !!selectedId && onPath);
+                  const faded = selectedId && !onPath;
+                  let d;
+                  if (edge.sameCol) {
+                    const bend = 10 + Math.abs(edge.y2 - edge.y1) * 0.15;
+                    const x = Math.min(edge.x1, edge.x2) - bend;
+                    d = `M ${edge.x1} ${edge.y1} C ${x} ${edge.y1} ${x} ${edge.y2} ${edge.x2 - 6} ${edge.y2}`;
+                  } else {
+                    const span = Math.max(24, edge.x2 - edge.x1);
+                    const xMid = edge.x1 + Math.min(48, span * 0.45);
+                    d = `M ${edge.x1} ${edge.y1} C ${xMid} ${edge.y1} ${edge.x2 - span * 0.35} ${edge.y2} ${edge.x2 - 7} ${edge.y2}`;
+                  }
                   return (
-                    <g key={`${edge.kind}:${edge.from}:${edge.to}:${edge.mode || ''}:${edge.table || ''}`}>
-                      <path d={d} fill="none" stroke={paint.color} strokeWidth="1.4" strokeDasharray={paint.dash || undefined} />
-                      <path d={`M ${edge.x2 - 8} ${y2 - 3.5} L ${edge.x2 - 1} ${y2} L ${edge.x2 - 8} ${y2 + 3.5}`} fill="none" stroke={paint.color} strokeWidth="1.4" />
-                      {label && (
-                        <g>
-                          <rect x={lx - label.length * 5.4} y={ly - 9} width={label.length * 5.4 + 6} height={12} rx="3" fill="#161826" />
-                          <text x={lx} y={ly} fill={paint.color} fontSize="10" textAnchor="end" fontFamily={MONO}>{label}</text>
-                        </g>
-                      )}
-                    </g>
+                    <path
+                      key={`${edge.kind}:${edge.from}:${edge.to}:${edge.mode || ''}:${edge.table || ''}`}
+                      d={d}
+                      fill="none"
+                      stroke={paint.color}
+                      strokeWidth="1.5"
+                      strokeDasharray={paint.dash || undefined}
+                      opacity={faded ? 0.25 : 0.95}
+                      markerEnd=""
+                    />
                   );
                 })}
               </svg>
+              {hoverId && hoverId !== selectedId && (
+                <HoverNote flow={flow} id={hoverId} />
+              )}
             </div>
           )}
         </div>
       </div>
-
-      <aside style={{
-        flex: 'none', width: 320, borderLeft: '1px solid #292b36',
-        display: 'flex', flexDirection: 'column', minHeight: 0, background: '#161826',
-      }}>
-        {selected ? (
-          <div style={{ overflow: 'auto', padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div>
-              <div style={{ fontSize: 10, letterSpacing: '0.08em', color: '#9184d9' }}>
-                {flow?.steps?.some((step) => step.id === selected.id) ? `SELECTED · STEP ${flow.steps.find((step) => step.id === selected.id)?.n}` : 'SELECTED'}
-              </div>
-              <div style={{ fontFamily: MONO, fontSize: 16, marginTop: 6 }}>{selected.label}</div>
-              <div style={{ fontFamily: MONO, fontSize: 11, color: '#8b90a6', marginTop: 4, wordBreak: 'break-all' }}>
-                {selected.file} · line {selected.line}
-              </div>
-            </div>
-            <Section title="What it does">{selected.whatItDoes}</Section>
-            <Section title="What this PR changed">{selected.whatChanged}</Section>
-            {!!selected.diff?.length && (
-              <pre style={{
-                margin: 0, padding: '8px 10px', borderRadius: 8, background: '#12131c',
-                fontFamily: MONO, fontSize: 11, lineHeight: 1.5, overflow: 'auto',
-              }}>
-                {selected.diff.map((line, index) => (
-                  <div key={index} style={{ color: line.type === 'add' ? '#9dffc0' : line.type === 'del' ? '#ffb0b8' : '#cfd3e5' }}>
-                    {line.type === 'add' ? '+ ' : line.type === 'del' ? '− ' : '  '}{line.text}
-                  </div>
-                ))}
-              </pre>
-            )}
-            <Relation title="Calls" rows={selected.calls} onPick={setSelectedId} />
-            <Relation title="Called by" rows={selected.calledBy} onPick={setSelectedId} />
-            {onShowInGraph && (
-              <button
-                type="button"
-                onClick={() => onShowInGraph(selected.file)}
-                style={{
-                  alignSelf: 'flex-start', border: '1px solid #5d5294', background: '#2b2741',
-                  color: '#f5f4ff', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', font: 'inherit', fontSize: 12,
-                }}
-              >Show in graph</button>
-            )}
-          </div>
-        ) : (
-          <div style={{
-            margin: 'auto', textAlign: 'center', color: '#8b90a6', fontSize: 13, padding: 24,
-          }}>Click a function to explain it.</div>
-        )}
-      </aside>
+      {selected && (
+        <Explain
+          selected={selected}
+          flow={flow}
+          stepIndex={stepIndex}
+          steps={steps}
+          onPrev={() => stepIndex > 0 && setSelectedId(steps[stepIndex - 1].id)}
+          onNext={() => stepIndex >= 0 && stepIndex < steps.length - 1 && setSelectedId(steps[stepIndex + 1].id)}
+          onClose={() => setSelectedId('')}
+          onPick={setSelectedId}
+          onShowInGraph={onShowInGraph}
+          onOpenSource={onOpenSource}
+        />
+      )}
     </div>
   );
 }
 
-function Section({ title, children }) {
+function HoverNote({ flow, id }) {
+  const box = findBox(flow, id);
+  if (!box) return null;
+  const stats = fnStats(box);
   return (
-    <section>
-      <div style={{ fontSize: 10, letterSpacing: '0.08em', color: '#8b90a6', marginBottom: 4 }}>{title.toUpperCase()}</div>
-      <div style={{ fontSize: 13, lineHeight: 1.45 }}>{children}</div>
-    </section>
+    <div className="ex-tip" style={{ visibility: 'visible', left: 24, bottom: 72, top: 'auto' }}>
+      <div className="t">{box.label}</div>
+      <div className="sum">
+        {box.status === 'added' ? 'New' : box.status === 'edited' ? 'Edited' : box.status === 'moved' ? 'Moved' : 'Unchanged'}
+        {stats.adds > 0 && <span className="plus"> +{stats.adds}</span>}
+        {stats.dels > 0 && <span className="minus"> −{stats.dels}</span>}
+      </div>
+      <div className="meta">Click to explain</div>
+    </div>
+  );
+}
+
+function Explain({ selected, flow, stepIndex, steps, onPrev, onNext, onClose, onPick, onShowInGraph, onOpenSource }) {
+  const stats = fnStats(selected);
+  const step = steps[stepIndex];
+  const column = flow?.columns?.[selected.column];
+  return (
+    <aside className="ex-sheet">
+      <div className="body">
+        <div className="kick">
+          <span>{step ? `Step ${step.n} of ${steps.length}` : 'Selected'}</span>
+          {column?.label && <><span style={{ color: '#4a4e66' }}>·</span><span className="mono">{column.label}</span></>}
+          <span className="sp">
+            <button type="button" className="ex-ib" aria-label="Previous step" onClick={onPrev} disabled={stepIndex <= 0}>‹</button>
+            <button type="button" className="ex-ib" aria-label="Next step" onClick={onNext} disabled={stepIndex < 0 || stepIndex >= steps.length - 1}>›</button>
+            <button type="button" className="ex-ib" aria-label="Close" onClick={onClose}>×</button>
+          </span>
+        </div>
+        <h2>{selected.label}</h2>
+        <div className="path">{selected.file}:{selected.line}</div>
+        <div className="chips">
+          {selected.status === 'added' && <span className="chip g">new in this PR</span>}
+          {selected.status === 'edited' && <span className="chip g">edited</span>}
+          {selected.status === 'moved' && <span className="chip">moved{selected.movedFromLabel ? ` from ${selected.movedFromLabel}` : ''}</span>}
+          {selected.status === 'deleted' && <span className="chip">deleted</span>}
+          {(stats.adds > 0 || stats.dels > 0) && (
+            <span className="chip mono">
+              {stats.adds > 0 && <span className="flow-plus">+{stats.adds}</span>}
+              {stats.dels > 0 && <span className="flow-minus"> −{stats.dels}</span>}
+            </span>
+          )}
+        </div>
+        <div className="sec">What it does</div>
+        <div className="p">{selected.whatItDoes}</div>
+        <div className="sec">What this PR changed</div>
+        <div className="p">{selected.whatChanged}</div>
+        {!!selected.diff?.length && (
+          <div className="code">
+            {selected.diff.map((line, index) => (
+              <div key={index} className={line.type === 'add' ? 'a' : line.type === 'del' ? 'r' : ''}>
+                {line.type === 'add' ? '+ ' : line.type === 'del' ? '− ' : '  '}{line.text}
+              </div>
+            ))}
+          </div>
+        )}
+        <Relation title="Calls" rows={selected.calls} onPick={onPick} />
+        <Relation title="Called by" rows={selected.calledBy} onPick={onPick} />
+      </div>
+      <div className="actions">
+        <button type="button" className="btn" onClick={() => (onOpenSource || onShowInGraph)?.(selected.file)}>Open source</button>
+        <button type="button" className="btn pri" onClick={() => onShowInGraph?.(selected.file)}>Show in graph</button>
+      </div>
+    </aside>
   );
 }
 
 function Relation({ title, rows, onPick }) {
   if (!rows?.length) return null;
   return (
-    <section>
-      <div style={{ fontSize: 10, letterSpacing: '0.08em', color: '#8b90a6', marginBottom: 6 }}>{title.toUpperCase()}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {rows.map((row) => (
-          <button
-            key={`${row.kind}:${row.id}:${row.mode || ''}`}
-            type="button"
-            onClick={() => onPick(row.id)}
-            style={{
-              textAlign: 'left', border: '1px solid #313445', background: '#1c1e2c', color: 'inherit',
-              borderRadius: 8, padding: '6px 8px', cursor: 'pointer', font: 'inherit',
-            }}
-          >
-            <span style={{ fontFamily: MONO, fontSize: 12 }}>{row.name}</span>
-            {row.kind !== 'call' && (
-              <span style={{ marginLeft: 8, fontSize: 10, color: '#d7c4a1' }}>{row.label || row.kind}</span>
-            )}
-          </button>
-        ))}
-      </div>
-    </section>
+    <>
+      <div className="sec">{title}</div>
+      {rows.map((row) => (
+        <button key={`${row.kind}:${row.id}:${row.mode || ''}`} type="button" className="rel" onClick={() => onPick(row.id)}>
+          <span className="mono" style={{ color: row.kind !== 'call' ? '#2EFF7A' : '#e9e9ed' }}>{row.name}</span>
+          <span className="s">{row.kind !== 'call' ? (row.label || row.kind) : (row.file ? 'same change' : '')}</span>
+        </button>
+      ))}
+    </>
   );
 }
-
-function Key({ swatch, label, dash, dot }) {
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-      <span style={{
-        width: 18, borderTop: `1.5px ${dot ? 'dotted' : dash ? 'dashed' : 'solid'} ${swatch}`,
-      }} />
-      {label}
-    </span>
-  );
-}
-
-function Empty({ children }) {
-  return <div style={{ padding: 28, color: '#b2b6ca', fontSize: 13 }}>{children}</div>;
-}
-
-const pagerBtn = {
-  width: 26, height: 26, borderRadius: 8, border: '1px solid #3f424d',
-  background: 'transparent', color: '#e9e9ed', cursor: 'pointer', font: 'inherit',
-};

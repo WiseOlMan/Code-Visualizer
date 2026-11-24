@@ -14,10 +14,11 @@ import {
   collectGitChanges,
   collectPackageHeads,
   fileDiff,
+  gitRemoteUrl,
   resolveBaseBranch,
   resolveRev,
 } from '../tools/git-changes.mjs';
-import { resolveCompareBase } from '../tools/pr-base.mjs';
+import { parseGithubRemote, resolveCompareBase } from '../tools/pr-base.mjs';
 import { computeFocusView, decodeFocusQuery, normalizeFocusState } from '../client/src/focusView.js';
 import { buildFlowView } from '../tools/flow-model.mjs';
 import {
@@ -247,6 +248,7 @@ async function buildGitChangesResponse(root, hints = {}) {
     baseSource: primary?.source || 'default',
     baseNote: primary?.note || null,
     pr: primary?.pr || null,
+    remote: parseGithubRemote(gitRemoteUrl(primaryRoot) || '') || null,
     headSha,
     baseSha,
     headShort: headSha ? String(headSha).slice(0, 8) : null,

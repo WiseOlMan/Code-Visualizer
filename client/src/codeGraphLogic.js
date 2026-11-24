@@ -9,6 +9,7 @@ import {
   isTestPath,
   shortDirLabel,
 } from './focusView.js';
+import { radiusFromLines, sideFromRadius, fillFractions, TEAL } from './diffMark.js';
 
 
 const asset = (_id, fallback) => fallback;
@@ -64,13 +65,24 @@ function hopKeyOf(l) {
   if (!l) return null;
   return l._key || `${l.kind}|${l.s?.id || ''}=>${l.t?.id || ''}|${hopLabelOf(l)}`;
 }
+function nodeSide(n) {
+  return sideFromRadius(n?.r);
+}
+/** Point where a curve meets the square, coming from (fx, fy). */
+function squarePort(n, fx, fy) {
+  const h = nodeSide(n) / 2 + 1.5;
+  const dx = fx - n.x;
+  const dy = fy - n.y;
+  const scale = Math.max(Math.abs(dx) / h, Math.abs(dy) / h) || 1;
+  return { x: n.x + dx / scale, y: n.y + dy / scale };
+}
 function linkCurve(l) {
-  const end = l.t.isEndpoint ? socketPort(l.t, l.s.x, l.s.y) : { x: l.t.x, y: l.t.y };
-  const start = l.s.isEndpoint ? socketPort(l.s, l.t.x, l.t.y) : { x: l.s.x, y: l.s.y };
+  const end = squarePort(l.t, l.s.x, l.s.y);
+  const start = squarePort(l.s, l.t.x, l.t.y);
   const mx = (start.x + end.x) / 2, my = (start.y + end.y) / 2;
   const dx = end.x - start.x, dy = end.y - start.y;
   const typed = hopKindOf(l);
-  const bow = typed ? 0.045 : 0.09;
+  const bow = typed ? 0.08 : 0.14;
   return { start, end, cx: mx - dy * bow, cy: my + dx * bow };
 }
 function bezierAt(start, c, end, t) {
@@ -109,8 +121,8 @@ function muteFolderColor(c) {
 // Nothing here is repo-specific — drop any codebase in and the palette
 // reorganises around whatever top-level structure it actually has.
 const MAX_GROUPS = 11;
-// Hues deliberately skip ~120–160 (lime/green) reserved for git adds/edits.
-const GROUP_HUES = [220, 255, 290, 325, 15, 40, 55, 195, 245, 340, 75];
+// Gold, periwinkle, teal, lilac — warm salmon/pink reads as "removed", so it stays out.
+const GROUP_COLORS = ['#c99d4e', '#8aa1ea', '#43b4d4', '#a498e5', '#36baba', '#74a7e8', '#5eade2', '#35b9c0', '#b7a36a', '#7d8ec4', '#6aa8b8'];
 function deriveGroups(ids) {
   const count = {};
   const keyOf = id => {
@@ -129,8 +141,7 @@ function deriveGroups(ids) {
   const prefixes = ranked.sort((a, b) => b.length - a.length);
   const colors = {};
   ranked.forEach((k, i) => {
-    const h = GROUP_HUES[i % GROUP_HUES.length];
-    colors[k] = `oklch(0.72 0.11 ${h})`;
+    colors[k] = GROUP_COLORS[i % GROUP_COLORS.length];
   });
   const label = k => k.split('/').pop();
   return {
@@ -311,11 +322,10 @@ function socketPort(n, fx, fy) {
 // Every node has a footprint: circles their radius, sockets their shell box.
 // Overlap is resolved as a hard positional correction after the force pass,
 // so nothing ever ends up sitting on top of anything else.
-const NODE_GAP = 4;
+const NODE_GAP = 28;
 function extents(n) {
-  if (!n.isEndpoint) return { hw: n.r, hh: n.r, round: true };
-  const b = socketBox(n);
-  return { hw: b.w / 2, hh: b.h / 2, round: false };
+  const h = nodeSide(n) / 2;
+  return { hw: h, hh: h, round: false };
 }
 function separateNodes(ns, iterations) {
   for (let it = 0; it < iterations; it++) {
@@ -373,7 +383,8 @@ export class CodeGraphEngine extends React.Component {
   state = {
     query: '', selId: null, selHopKey: null, code: null, codeDiff: null, sigTick: 0, labelTick: 0, panelTab: 'details',
     folderDepth: 2, hideTests: true, hideGenerated: true,
-    showCalls: true, showHops: true, highlightGit: true, onlyGit: false,
+    showCalls: true, showHops: true, highlightGit: true, onlyGit: false, onlyChangedImports: false,
+    hoverId: null, zoomPct: 100,
     branchInput: '', compareInput: '',
     stats: '', repoName: '',
     gitSummary: '', gitHeadLabel: '', gitBaseLabel: '', gitPr: null, gitBaseNote: '', gitBaseSource: '',
@@ -388,6 +399,7 @@ export class CodeGraphEngine extends React.Component {
     this.canvasRef = React.createRef();
     this.legendRef = React.createRef();
     this.hopCardRef = React.createRef();
+    this.tipRef = React.createRef();
     this.view = { x: 0, y: 0, k: 1 };
     this.nodes = []; this.links = []; this.byId = {};
     this.hover = null; this.hoverHop = null; this.drag = null; this.pan = null;
@@ -507,6 +519,11 @@ export class CodeGraphEngine extends React.Component {
     }
     if (this.props.focusToken && this.props.focusToken !== prev.focusToken && this.props.focusNodeId) {
       this.select(this.props.focusNodeId);
+      if (this.props.focusPanel === 'source') this.setState({ panelTab: 'source' });
+    }
+    this.publishApi();
+    if (this.hover || this.state.hoverId) {
+      requestAnimationFrame(() => { if (!this._dead) this.positionTooltip(); });
     }
     if (prev.viewActive !== this.props.viewActive) {
       this.syncCaptureReady(!!this._captureReady);
@@ -687,7 +704,7 @@ export class CodeGraphEngine extends React.Component {
     return linkList;
   }
 
-  fitNodes(ns, { pad = 56, maxK = 2.6, minSpan = 80 } = {}) {
+  fitNodes(ns, { pad = 56, maxK = 2.6, minSpan = 80, padRight = 0, padBottom = 72 } = {}) {
     if (!ns?.length || !this.w || !this.h) return;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const n of ns) {
@@ -699,12 +716,14 @@ export class CodeGraphEngine extends React.Component {
     const midX = (x0 + x1) / 2, midY = (y0 + y1) / 2;
     if (x1 - x0 < minSpan) { x0 = midX - minSpan / 2; x1 = midX + minSpan / 2; }
     if (y1 - y0 < minSpan) { y0 = midY - minSpan / 2; y1 = midY + minSpan / 2; }
-    const availW = this.w - pad * 2, availH = this.h - pad * 2;
+    const padL = pad, padT = pad + 8, padR = pad + padRight, padB = pad + padBottom;
+    const availW = Math.max(80, this.w - padL - padR), availH = Math.max(80, this.h - padT - padB);
     const k = Math.min(maxK, Math.max(0.18, Math.min(availW / (x1 - x0 || 1), availH / (y1 - y0 || 1))));
     this.view.k = k;
-    this.view.x = pad + (availW - (x1 - x0) * k) / 2 - x0 * k;
-    this.view.y = pad + (availH - (y1 - y0) * k) / 2 - y0 * k;
+    this.view.x = padL + (availW - (x1 - x0) * k) / 2 - x0 * k;
+    this.view.y = padT + (availH - (y1 - y0) * k) / 2 - y0 * k;
     this.dirty = true;
+    this.noteZoom();
     this.kick();
   }
 
@@ -714,8 +733,8 @@ export class CodeGraphEngine extends React.Component {
     if (!node) return;
     const ns = this.neighborsOf(node);
     // Sparse leaves get a comfortable close-up; dense hubs size to their bbox.
-    const minSpan = ns.length <= 3 ? 140 : 80;
-    this.fitNodes(ns, { pad: 64, maxK: ns.length <= 3 ? 4 : 2.8, minSpan });
+    const minSpan = ns.length <= 3 ? 180 : 120;
+    this.fitNodes(ns, { pad: 72, maxK: 2.15, minSpan, padRight: 400, padBottom: 88 });
   }
 
   /** Queue a camera refit. While a node is selected, keep focus on its neighborhood. */
@@ -761,7 +780,7 @@ export class CodeGraphEngine extends React.Component {
         this.fitSelection(this.byId[node.id] || node);
       });
     });
-    if (!node) { this.kick(); return; }
+    if (!node) { this.fit(); this.kick(); return; }
     this.source(node.id).then(t => { if (this.state.selId === node.id) this.setState({ code: t }); });
     if (node.gitChanged) {
       this.sourceDiff(node.id).then((d) => {
@@ -838,13 +857,16 @@ export class CodeGraphEngine extends React.Component {
       const gi = this.groups.keys.indexOf(g.key);
       const a = ((gi < 0 ? this.groups.keys.length : gi) / (this.groups.keys.length + 1)) * Math.PI * 2;
       const weight = (base.inDeg || 0) + (callIn[id] || 0);
+      const lines = base.lines || 0;
       return {
         ...base, g: g.label, gkey: g.key, gcolor: g.color, color: meta ? INK.call : g.color,
         isEndpoint: !!meta, url: meta ? meta.url : null,
         label: displayName(id, meta ? meta.url : null),
+        lines,
         x: W / 2 + Math.cos(a) * Math.min(W, H) * 0.3 + (Math.random() - 0.5) * 110,
         y: H / 2 + Math.sin(a) * Math.min(W, H) * 0.3 + (Math.random() - 0.5) * 110,
-        vx: 0, vy: 0, r: 3.5 + Math.sqrt(weight) * 3.2,
+        vx: 0, vy: 0,
+        r: radiusFromLines(lines > 0 ? lines : Math.max(28, 18 + weight * 6)),
       };
     });
     // endpoints keep their folder colour as a tint but read as sockets;
@@ -890,18 +912,27 @@ export class CodeGraphEngine extends React.Component {
     });
     this.applyGitOverlay(this.props.gitInfo);
     this.kick(1);
+    this.publishApi();
+    requestAnimationFrame(() => { if (!this._dead) this.positionTooltip(); });
   }
 
   applyGitOverlay(gitInfo) {
     const files = gitInfo?.files || [];
     const byStatus = new Map();
+    const byDiff = new Map();
     const rank = { A: 3, M: 2, D: 1 };
     for (const f of files) {
       if (!f.graphId) continue;
       const st = normGitStatus(f.status);
       if (!st) continue;
       const prev = byStatus.get(f.graphId);
-      if (!prev || (rank[st] || 0) > (rank[prev] || 0)) byStatus.set(f.graphId, st);
+      if (!prev || (rank[st] || 0) > (rank[prev] || 0)) {
+        byStatus.set(f.graphId, st);
+        byDiff.set(f.graphId, {
+          additions: Number(f.additions) || 0,
+          deletions: Number(f.deletions) || 0,
+        });
+      }
     }
 
     const overlaySig = [...byStatus.entries()].sort((a, b) => a[0].localeCompare(b[0]))
@@ -963,6 +994,13 @@ export class CodeGraphEngine extends React.Component {
       n.gitStatus = byStatus.get(n.id) || null;
       n.gitChanged = !!n.gitStatus;
       n.gitGhost = false;
+      const diff = byDiff.get(n.id);
+      n.gitAdds = diff?.additions || (n.gitStatus === 'A' ? (n.lines || 0) : 0);
+      n.gitDels = diff?.deletions || 0;
+      if (n.gitStatus === 'A' && !n.lines && n.gitAdds) {
+        n.lines = n.gitAdds;
+        n.r = radiusFromLines(n.lines);
+      }
     }
 
     // Deletions still show when the file remains in the last graph; if it's
@@ -984,9 +1022,12 @@ export class CodeGraphEngine extends React.Component {
           color: GIT.del,
           gitStatus: 'D', gitChanged: true, gitGhost: true,
           inDeg: 0, outDeg: 0, isEndpoint: false, url: null,
+          gitAdds: byDiff.get(graphId)?.additions || 0,
+          gitDels: byDiff.get(graphId)?.deletions || 0,
+          lines: byDiff.get(graphId)?.deletions || 24,
           x: (anchor?.x ?? W / 2) + (Math.random() - 0.5) * 40,
           y: (anchor?.y ?? H / 2) + (Math.random() - 0.5) * 40,
-          vx: 0, vy: 0, r: 5.5,
+          vx: 0, vy: 0, r: radiusFromLines(byDiff.get(graphId)?.deletions || 24),
         };
         this.nodes.push(ghost);
         this.byId[graphId] = ghost;
@@ -1032,6 +1073,7 @@ export class CodeGraphEngine extends React.Component {
     const showCalls = this.state.showCalls;
     const showHops = this.state.showHops !== false;
     const onlyGit = this.state.onlyGit;
+    const onlyChangedImports = this.state.onlyChangedImports;
     for (const n of this.nodes) {
       // "Changed only" wins: show every git-touched file (incl. tests) and keep
       // folder cells rebuilt from that set so foldering stays intact.
@@ -1062,7 +1104,7 @@ export class CodeGraphEngine extends React.Component {
           off = true;
         }
       }
-      if (!off && onlyGit) {
+      if (!off && (onlyGit || onlyChangedImports)) {
         if (hopKindOf(l)) off = !l.s.gitChanged;
         else if (!l.s.gitChanged || !l.t.gitChanged) off = true;
       }
@@ -1100,13 +1142,14 @@ export class CodeGraphEngine extends React.Component {
       x0 = Math.min(x0, r.x0); x1 = Math.max(x1, r.x1);
       y0 = Math.min(y0, r.y0); y1 = Math.max(y1, r.y1);
     }
-    const pad = 34;
-    const availW = this.w - pad * 2, availH = this.h - pad * 2;
-    const k = Math.min(2, Math.max(0.12, Math.min(availW / (x1 - x0 || 1), availH / (y1 - y0 || 1))));
+    const padL = 48, padT = 64, padR = 48, padB = 108;
+    const availW = Math.max(80, this.w - padL - padR), availH = Math.max(80, this.h - padT - padB);
+    const k = Math.min(3.4, Math.max(0.2, Math.min(availW / (x1 - x0 || 1), availH / (y1 - y0 || 1))));
     this.view.k = k;
-    this.view.x = pad + (availW - (x1 - x0) * k) / 2 - x0 * k;
-    this.view.y = pad + (availH - (y1 - y0) * k) / 2 - y0 * k;
+    this.view.x = padL + (availW - (x1 - x0) * k) / 2 - x0 * k;
+    this.view.y = padT + (availH - (y1 - y0) * k) / 2 - y0 * k;
     this.dirty = true;
+    this.noteZoom();
   }
 
   toWorld(px, py) { return { x: (px - this.view.x) / this.view.k, y: (py - this.view.y) / this.view.k }; }
@@ -1122,16 +1165,11 @@ export class CodeGraphEngine extends React.Component {
     }
     let best = null, bd = 1e9;
     for (const n of candidates) {
-      if (n.isEndpoint) {
-        const b = socketBox(n);
-        if (p.x > b.x0 - slop && p.x < b.x0 + b.w + slop && p.y > b.y0 - slop && p.y < b.y0 + b.h + slop) {
-          const d = (n.x - p.x) ** 2 + (n.y - p.y) ** 2;
-          if (d < bd) { bd = d; best = n; }
-        }
-        continue;
+      const h = nodeSide(n) / 2 + slop;
+      if (Math.abs(p.x - n.x) <= h && Math.abs(p.y - n.y) <= h) {
+        const d = (n.x - p.x) ** 2 + (n.y - p.y) ** 2;
+        if (d < bd) { bd = d; best = n; }
       }
-      const d = (n.x - p.x) ** 2 + (n.y - p.y) ** 2;
-      if (d < bd && d < (n.r + slop) ** 2) { bd = d; best = n; }
     }
     return best;
   }
@@ -1221,6 +1259,8 @@ export class CodeGraphEngine extends React.Component {
           this.hover = h;
           this.hoverHop = hop;
           this.resetLabelCycle(h?.id || (this.state.selId || null));
+          const hoverId = h?.id || null;
+          if (hoverId !== this.state.hoverId) this.setState({ hoverId });
           this.kick();
           cv.style.cursor = (h || hop) ? 'pointer' : 'grab';
         }
@@ -1261,6 +1301,7 @@ export class CodeGraphEngine extends React.Component {
       this.view.x = x - (x - this.view.x) * r;
       this.view.y = y - (y - this.view.y) * r;
       this.view.k = k;
+      this.noteZoom();
       this.kick();
     }, { passive: false });
   }
@@ -1445,9 +1486,9 @@ export class CodeGraphEngine extends React.Component {
         const e = extents(n);
         area += (e.hw * 2 + NODE_GAP + 6) * (e.hh * 2 + NODE_GAP + 6);
       }
-      area *= 2.1;
-      const w = Math.max(84, Math.sqrt(area * 1.35));
-      return { w, h: Math.max(64, area / w) };
+      area *= 3.4;
+      const w = Math.max(180, Math.sqrt(area * 1.7));
+      return { w, h: Math.max(140, area / w) };
     };
 
     const shelf = (items, gapX, gapY, aspect) => {
@@ -1528,29 +1569,36 @@ export class CodeGraphEngine extends React.Component {
     const { x: vx, y: vy, k } = this.view;
     ctx.save();
     ctx.clearRect(0, 0, this.w, this.h);
-    ctx.fillStyle = INK.bg;
-    ctx.fillRect(0, 0, this.w, this.h);
     ctx.translate(vx, vy); ctx.scale(k, k);
 
     if (!this.cells) this.buildCells(this.active || this.nodes);
     const rects = [...(this.frames || []), ...Object.values(this.cells || {})];
     this.rects = rects;
-    ctx.lineWidth = 1 / k;
+    const folderFade = (this.hover || (this.state.selId && this.byId[this.state.selId])) ? 0.45 : 1;
+    ctx.lineWidth = 0.8;
+    ctx.font = '10.5px "JetBrains Mono", ui-monospace, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
     for (const r of rects) {
       const w = r.x1 - r.x0, h = r.y1 - r.y0;
-      const d = r.depth || 0;
-      const nested = d > 0;
-      ctx.globalAlpha = nested ? Math.max(0.04, 0.07 - d * 0.015) : 0.035;
-      ctx.fillStyle = r.color;
-      ctx.beginPath(); ctx.roundRect(r.x0, r.y0, w, h, nested ? 8 : 12); ctx.fill();
-      ctx.globalAlpha = nested ? Math.max(0.22, 0.4 - d * 0.06) : 0.5;
+      const nested = (r.depth || 0) > 0;
+      ctx.globalAlpha = folderFade;
+      if (!nested) {
+        ctx.fillStyle = 'rgba(255,255,255,0.014)';
+        ctx.beginPath(); ctx.roundRect(r.x0, r.y0, w, h, 12); ctx.fill();
+      }
       ctx.strokeStyle = r.color;
-      ctx.beginPath(); ctx.roundRect(r.x0, r.y0, w, h, nested ? 8 : 12); ctx.stroke();
+      ctx.globalAlpha = folderFade * (nested ? 0.28 : 0.5);
+      ctx.beginPath(); ctx.roundRect(r.x0, r.y0, w, h, nested ? 9 : 12); ctx.stroke();
+      const label = r.label || r.key || '';
+      ctx.globalAlpha = folderFade;
+      ctx.font = `${nested ? 9.5 : 10.5}px "JetBrains Mono", ui-monospace, monospace`;
+      if (ctx.measureText(label).width < w - 16) {
+        ctx.fillStyle = nested ? '#686c83' : '#9397ab';
+        ctx.fillText(label, r.x0 + 10, r.y0 + 15);
+      }
     }
-    this._frameLabels = rects.map(r => ({
-      text: r.label || r.key, color: r.color, nested: (r.depth || 0) > 0,
-      x: vx + r.x0 * k, y: vy + r.y0 * k, w: (r.x1 - r.x0) * k,
-    }));
+    this._frameLabels = null;
 
     const q = this.state.query.trim().toLowerCase();
     const sel = this.state.selId ? this.byId[this.state.selId] : null;
@@ -1594,45 +1642,20 @@ export class CodeGraphEngine extends React.Component {
       if (contextEdge && !nodeOn && !selectedHop && !hoverHop) continue;
       const dim = q && !(l.s.id.toLowerCase().includes(q) || l.t.id.toLowerCase().includes(q));
       const c = linkCurve(l);
+      const other = nodeOn ? (l.s === focus ? l.t : l.s) : null;
       if (typed && hopOn) {
-        // Quiet until a connected file or this hop is the focus — idle 0.72
-        // made every Drizzle/HTTP edge a wall and hid branch colors.
-        if (selectedHop || hoverHop) {
-          ctx.globalAlpha = 1;
-          ctx.lineWidth = (selectedHop ? 3.1 : 2.4) / k;
-        } else if (contextEdge) {
-          ctx.globalAlpha = 0.1;
-          ctx.lineWidth = 0.65 / k;
-        } else if (nodeOn) {
-          ctx.globalAlpha = 0.92;
-          ctx.lineWidth = 2.05 / k;
-        } else if (focus || selHopKey) {
-          ctx.globalAlpha = 0.07;
-          ctx.lineWidth = 0.7 / k;
-        } else {
-          ctx.globalAlpha = 0.14;
-          ctx.lineWidth = 0.75 / k;
-        }
+        ctx.globalAlpha = (selectedHop || hoverHop || nodeOn) ? 0.95 : (focus ? 0.06 : 0.28);
+        ctx.lineWidth = (selectedHop || hoverHop || nodeOn) ? 2.6 : 1.15;
         ctx.strokeStyle = hopColor(l);
-        ctx.setLineDash(typed === 'http' ? [5 / k * k, 4] : []);
-      } else if (this.state.focusOn) {
-        ctx.globalAlpha = 0.92;
-        ctx.strokeStyle = INK.call;
-        ctx.lineWidth = 1.45;
-        ctx.setLineDash([]);
+        ctx.setLineDash(typed === 'http' ? [4, 3] : []);
       } else {
-        const on = focus ? nodeOn : true;
-        if (contextEdge) {
-          ctx.globalAlpha = 0.08;
-        } else {
-          ctx.globalAlpha = on ? (focus ? 0.9 : isCall ? 0.34 : hopOn ? 0.12 : 0.26) : 0.05;
-        }
-        if (dim && !on) ctx.globalAlpha *= 0.3;
-        ctx.strokeStyle = isCall ? INK.call : (on && focus && !contextEdge ? l.t.color : INK.edge);
-        ctx.lineWidth = contextEdge
-          ? (isCall ? 0.55 : 0.45)
-          : isCall ? Math.min(2.6, 0.7 + l.weight * 0.3) : Math.min(3.2, 0.55 + l.weight * 0.28);
-        ctx.setLineDash(isCall ? [5 / k * k, 4] : []);
+        // Imports are thin teal curves. A hovered edge takes the neighbor's folder color.
+        ctx.strokeStyle = (nodeOn && other?.gcolor) ? other.gcolor : (isCall ? INK.call : TEAL);
+        ctx.globalAlpha = nodeOn ? 0.95 : (focus ? 0.06 : (isCall ? 0.45 : 0.38));
+        if (contextEdge && !nodeOn) ctx.globalAlpha = 0.06;
+        if (dim && !nodeOn) ctx.globalAlpha *= 0.35;
+        ctx.lineWidth = nodeOn ? 2.4 : 1.15;
+        ctx.setLineDash(isCall ? [5, 4] : []);
       }
 
       ctx.beginPath();
@@ -1645,30 +1668,17 @@ export class CodeGraphEngine extends React.Component {
         hopLabelLinks.push({ l, c, selectedHop });
       }
 
-      if ((this.state.focusOn && !typed) || (nodeOn && focus && !typed && !contextEdge)) {
+      if (!typed) {
         const ang = Math.atan2(c.end.y - c.cy, c.end.x - c.cx);
-        ctx.globalAlpha = this.state.focusOn ? 0.95 : ctx.globalAlpha;
+        const head = nodeOn ? 6.2 : 4.4;
         ctx.fillStyle = ctx.strokeStyle;
-        if (isCall) {
-          // a plug prong meeting the socket, rather than an arrowhead
-          const px = c.end.x - Math.cos(ang) * 1.5, py = c.end.y - Math.sin(ang) * 1.5;
-          ctx.lineWidth = 3.4;
-          ctx.strokeStyle = INK.call;
-          ctx.beginPath();
-          ctx.moveTo(px - Math.cos(ang) * 5.5, py - Math.sin(ang) * 5.5);
-          ctx.lineTo(px, py);
-          ctx.stroke();
-        } else {
-          const dx = c.end.x - c.start.x, dy = c.end.y - c.start.y;
-          const d = Math.sqrt(dx * dx + dy * dy) || 1;
-          const ax = c.end.x - dx / d * (l.t.r + 2), ay = c.end.y - dy / d * (l.t.r + 2);
-          const head = this.state.focusOn ? Math.max(9, 11 / k) : 7;
-          ctx.beginPath();
-          ctx.moveTo(ax, ay);
-          ctx.lineTo(ax - Math.cos(ang - 0.42) * head, ay - Math.sin(ang - 0.42) * head);
-          ctx.lineTo(ax - Math.cos(ang + 0.42) * head, ay - Math.sin(ang + 0.42) * head);
-          ctx.closePath(); ctx.fill();
-        }
+        ctx.globalAlpha = Math.min(1, ctx.globalAlpha * 1.3);
+        ctx.beginPath();
+        ctx.moveTo(c.end.x, c.end.y);
+        ctx.lineTo(c.end.x - Math.cos(ang - 0.45) * head, c.end.y - Math.sin(ang - 0.45) * head);
+        ctx.lineTo(c.end.x - Math.cos(ang + 0.45) * head, c.end.y - Math.sin(ang + 0.45) * head);
+        ctx.closePath();
+        ctx.fill();
       }
     }
 
@@ -1714,10 +1724,8 @@ export class CodeGraphEngine extends React.Component {
     }
     ctx.textBaseline = 'alphabetic';
 
-    const labels = [];
     const hlGit = this.state.highlightGit;
     const focusMode = this.state.focusOn;
-    // In focus, hop distance owns opacity. Changed files stay green fill/ring.
     const showGit = hlGit || focusMode;
     const drawNodes = [];
     const seenNode = new Set();
@@ -1732,158 +1740,136 @@ export class CodeGraphEngine extends React.Component {
         if (n) drawNodes.push(n);
       }
     }
+    const mono = '"JetBrains Mono", ui-monospace, monospace';
+    const labelQueue = [];
     for (const n of drawNodes) {
       const match = !q || n.id.toLowerCase().includes(q);
       const on = !focus || near.has(n.id);
       const peek = revealGit && revealed.has(n.id);
-      let alpha = focusMode
-        ? (n.focusOpacity ?? 1) * (match ? 1 : 0.25)
-        : (on ? 1 : 0.16) * (match ? 1 : 0.2);
-      // With branch colors on, mute unchanged so folder greens never look like adds —
-      // unless this neighbor was just revealed by hovering a changed file.
-      // Focus mode does not use that dimming — opacity is hop distance only.
-      if (!focusMode && hlGit && !n.gitChanged && !peek) alpha *= 0.28;
-      if (!focusMode && hlGit && n.gitStatus === 'D') alpha *= 0.85;
-      const folderFill = (!focusMode && hlGit && !n.gitChanged && !peek) ? muteFolderColor(n.color) : n.color;
-      if (focusMode) {
-        ctx.globalAlpha = Math.min(0.55, alpha) * 0.7;
-        ctx.fillStyle = '#9184d9';
-        ctx.beginPath();
-        if (n.isEndpoint) {
-          const b = socketBox(n);
-          ctx.roundRect(b.x0 - 5, b.y0 - 5, b.w + 10, b.h + 10, 6);
-        } else {
-          ctx.arc(n.x, n.y, n.r + 7, 0, 6.2832);
+      let alpha = focusMode ? (n.focusOpacity ?? 1) : (on ? 1 : 0.2);
+      if (!match) alpha *= 0.35;
+      if (showGit && n.gitStatus === 'D') alpha = Math.max(alpha, 0.85);
+      const side = nodeSide(n);
+      const h = side / 2;
+      const rx = side * 0.22;
+      const x0 = n.x - h;
+      const y0 = n.y - h;
+      const changed = showGit && (n.gitChanged || n.gitStatus);
+      const fr = changed ? fillFractions(n.gitAdds, n.gitDels, n.lines, n.gitStatus) : null;
+      const ringOn = n === this.hover || n === sel || n === labeled;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.roundRect(x0, y0, side, side, rx);
+      ctx.clip();
+      if (fr) {
+        ctx.fillStyle = INK.bg;
+        ctx.fillRect(x0, y0, side, side);
+        const gH = side * fr.g;
+        const rH = n.gitDels ? Math.max(side * fr.r, 2.5 / k) : 0;
+        ctx.globalAlpha = alpha * 0.85;
+        ctx.fillStyle = GIT.add;
+        ctx.fillRect(x0, y0 + side - gH, side, gH);
+        if (rH) {
+          ctx.globalAlpha = alpha * 0.9;
+          ctx.fillStyle = GIT.del;
+          ctx.fillRect(x0, y0 + side - gH - rH, side, rH);
         }
-        ctx.fill();
-      }
-      if (n.isEndpoint) {
-        const gitFill = showGit && n.gitStatus === 'A' ? GIT.add
-          : showGit && n.gitStatus === 'D' ? GIT.del
-          : (!focusMode && hlGit && !n.gitChanged && !peek ? folderFill : null);
-        const emph = (n === sel || n === labeled) ? INK.text
-          : (showGit && n.gitStatus === 'M') ? GIT.edit
-          : (showGit && n.gitStatus === 'A') ? '#12c45a'
-          : (showGit && n.gitStatus === 'D') ? '#ff8a95'
-          : (peek && !n.gitChanged ? INK.text : null)
-          || (q && match && q.length > 1 ? INK.text : null);
-        drawSocket(ctx, n, k, alpha, emph, gitFill, showGit && n.gitStatus === 'D');
       } else {
-        ctx.globalAlpha = alpha;
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, n.r, 0, 6.2832);
-        // Added = neon green fill; deleted = red; edited keep (unmuted) folder color + ring.
-        if (showGit && n.gitStatus === 'A') ctx.fillStyle = GIT.add;
-        else if (showGit && n.gitStatus === 'D') ctx.fillStyle = GIT.del;
-        else ctx.fillStyle = folderFill;
-        ctx.fill();
-        if (n === sel || n === labeled) {
-          ctx.lineWidth = 2.5 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.95; ctx.stroke();
-        } else if (peek && !n.gitChanged) {
-          ctx.lineWidth = 1.6 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.85; ctx.stroke();
-        } else if (showGit && n.gitStatus === 'M') {
-          // Edited = bright green ring. Focus keeps hop opacity; the color is the status.
-          ctx.lineWidth = 2.4 / k; ctx.strokeStyle = GIT.edit; ctx.globalAlpha = focusMode ? alpha : 1; ctx.stroke();
-        } else if (showGit && n.gitStatus === 'A') {
-          ctx.lineWidth = 1.6 / k; ctx.strokeStyle = '#12c45a'; ctx.globalAlpha = focusMode ? alpha : 0.95; ctx.stroke();
-        } else if (showGit && n.gitStatus === 'D') {
-          ctx.lineWidth = 1.8 / k; ctx.strokeStyle = '#ff8a95'; ctx.globalAlpha = focusMode ? alpha : 0.95;
-          ctx.setLineDash([3 / k, 2.5 / k]); ctx.stroke(); ctx.setLineDash([]);
-        } else if (q && match && q.length > 1) {
-          ctx.lineWidth = 1.5 / k; ctx.strokeStyle = INK.text; ctx.globalAlpha = 0.8; ctx.stroke();
-        }
+        const light = (focus && on) ? 0.16 : 0.07;
+        ctx.globalAlpha = alpha * light;
+        ctx.fillStyle = n.gcolor || '#8aa1ea';
+        ctx.fillRect(x0, y0, side, side);
       }
-      // One neighborhood title at a time (Tab / Shift+Tab cycles). Search hits still collide-cull.
-      // Revealed neighbors of a changed file all get names while hovered.
-      const primary = labeled && n === labeled;
-      const searchHit = q && q.length > 1 && match;
-      const gitHit = !focusMode && hlGit && n.gitChanged && (this.state.onlyGit || !q);
-      const revealHit = peek && n !== focus;
-      const focusKeep = focusMode && (n.focusRole === 'seed' || n.focusPinned);
-      if (focusMode || primary || searchHit || gitHit || revealHit) {
-        labels.push({
-          n,
-          on: focusMode ? true : on,
-          primary: primary || focusKeep,
-          searchHit: searchHit || gitHit || revealHit,
+      ctx.restore();
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.roundRect(x0, y0, side, side, rx);
+      ctx.lineWidth = (ringOn ? 2.2 : 1.15) / k;
+      ctx.strokeStyle = ringOn ? '#e9e9ed' : (changed ? 'rgba(255,255,255,0.45)' : (n.gcolor || '#8aa1ea'));
+      ctx.globalAlpha = ringOn || changed ? Math.max(alpha, 0.9) : alpha * 0.55;
+      ctx.stroke();
+
+      const showLabel = changed || (focus && on) || peek || (q && match) || (focusMode && (n.focusRole === 'seed' || n.focusPinned));
+      if (showLabel) {
+        labelQueue.push({
+          n, changed, on, alpha,
+          name: n.name || n.label || '',
         });
       }
     }
-
-    // Draw primary label last so it wins overlaps against search hits
-    labels.sort((a, b) => (a.primary === b.primary ? b.n.r - a.n.r : a.primary ? 1 : -1));
-    const placed = [];
-    ctx.textAlign = 'center';
-    for (const L of labels) {
-      const n = L.n;
-      const size = Math.max(9, Math.min(13, 9.5 + n.r * 0.22)) / k;
-      ctx.font = `${size}px Inter, ui-sans-serif, system-ui, sans-serif`;
-      const text = (this.state.focusOn && n.focusLabel) ? n.focusLabel : n.label;
-      const w = ctx.measureText(text).width;
-      const top = n.isEndpoint ? socketBox(n).y0 : n.y - n.r;
-      const y = top - 5 / k;
-      const box = { x0: n.x - w / 2 - 3 / k, x1: n.x + w / 2 + 3 / k, y0: y - size, y1: y + 3 / k };
-      if (!L.primary) {
-        let hit = false;
-        for (const p of placed) {
-          if (box.x0 < p.x1 && box.x1 > p.x0 && box.y0 < p.y1 && box.y1 > p.y0) { hit = true; break; }
-        }
-        if (hit) continue;
-      }
-      placed.push(box);
-      ctx.globalAlpha = 0.78;
-      ctx.fillStyle = INK.plate;
-      ctx.beginPath();
-      ctx.roundRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0, 3);
-      ctx.fill();
-      ctx.globalAlpha = L.on ? 0.94 : 0.15;
-      ctx.fillStyle = n.isEndpoint && !L.on ? INK.call : INK.text;
-      ctx.fillText(text, n.x, y);
-    }
-    if (this.state.focusOn) {
+    if (focusMode) {
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       for (const n of drawNodes) {
         if (!n.focusBadge) continue;
-        const text = n.focusBadge === 'touched' ? '⚠️ touched' : '✅ untouched';
-        const size = 11 / k;
-        ctx.font = `${size}px Inter, ui-sans-serif, system-ui, sans-serif`;
+        const text = n.focusBadge === 'touched' ? 'touched' : 'untouched';
+        ctx.font = `11px ${mono}`;
         const w = ctx.measureText(text).width;
-        const x = n.x + (n.isEndpoint ? socketBox(n).w / 2 : n.r) + 8 / k;
-        const y = n.y;
-        const padX = 4 / k;
-        const padY = 3 / k;
-        ctx.globalAlpha = 0.96;
-        ctx.fillStyle = INK.plate;
-        ctx.beginPath();
-        ctx.roundRect(x - padX, y - size / 2 - padY, w + padX * 2, size + padY * 2, 4 / k);
-        ctx.fill();
-        ctx.strokeStyle = n.focusBadge === 'touched' ? '#e6c07b' : GIT.add;
-        ctx.lineWidth = 1 / k;
-        ctx.stroke();
-        ctx.fillStyle = n.focusBadge === 'touched' ? '#e6c07b' : '#d7ffe8';
-        ctx.fillText(text, x, y);
+        const x = n.x + nodeSide(n) / 2 + 8;
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = n.focusBadge === 'touched' ? '#e6c07b' : GIT.add;
+        ctx.fillText(text, x, n.y);
       }
       ctx.textBaseline = 'alphabetic';
     }
     ctx.restore();
-
-    // folder names live in screen space so they stay 10px at any zoom
-    if (this._frameLabels) {
-      ctx.save();
-      ctx.textAlign = 'left';
-      ctx.font = '10px Inter, ui-sans-serif, system-ui, sans-serif';
-      for (const L of this._frameLabels) {
-        ctx.font = `${L.nested ? 9 : 10}px Inter, ui-sans-serif, system-ui, sans-serif`;
-        // drop the name rather than let it run over the neighbouring frame
-        if (ctx.measureText(L.text).width > L.w + 8) continue;
-        ctx.globalAlpha = L.nested ? 0.72 : 0.95;
-        ctx.fillStyle = L.color;
-        ctx.fillText(L.text, L.x + 1, L.y - 4);
-      }
-      ctx.restore();
-    }
+    this.drawScreenLabels(labelQueue, mono);
+    this.positionTooltip();
     this.positionHopCard();
+  }
+
+  drawScreenLabels(queue, mono) {
+    const ctx = this.ctx;
+    if (!ctx || !queue?.length) return;
+    const placed = [];
+    const drawOne = (item, yShift) => {
+      const n = item.n;
+      const sc = this.worldToScreen(n.x, n.y);
+      const half = nodeSide(n) * this.view.k / 2;
+      const name = item.name.length > 28 ? `${item.name.slice(0, 26)}…` : item.name;
+      ctx.font = `600 11px ${mono}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.lineJoin = 'round';
+      const nameW = ctx.measureText(name).width;
+      let nameY = item.changed ? sc.y - half - 16 - yShift : sc.y + half + 14;
+      let box = { x0: sc.x - nameW / 2 - 2, x1: sc.x + nameW / 2 + 2, y0: nameY - 12, y1: nameY + 3 };
+      const hits = (b) => placed.some((p) => b.x0 < p.x1 && b.x1 > p.x0 && b.y0 < p.y1 && b.y1 > p.y0);
+      if (hits(box)) {
+        nameY += item.changed ? -14 : 14;
+        box = { x0: box.x0, x1: box.x1, y0: nameY - 12, y1: nameY + 3 };
+      }
+      if (hits(box) && !item.changed) return;
+      placed.push(box);
+      ctx.globalAlpha = item.on || item.changed ? 1 : 0.35;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = INK.bg;
+      ctx.strokeText(name, sc.x, nameY);
+      ctx.fillStyle = item.changed ? '#e9e9ed' : '#b3b6c8';
+      ctx.fillText(name, sc.x, nameY);
+      if (!item.changed) return;
+      const countY = sc.y - half - 4;
+      const adds = `+${n.gitAdds || 0}`;
+      const dels = n.gitDels ? ` −${n.gitDels}` : '';
+      ctx.font = `11px ${mono}`;
+      const aw = ctx.measureText(adds).width;
+      const dw = dels ? ctx.measureText(dels).width : 0;
+      const start = sc.x - (aw + dw) / 2;
+      ctx.textAlign = 'left';
+      ctx.strokeStyle = INK.bg;
+      ctx.strokeText(adds + (dels || ''), start, countY);
+      ctx.fillStyle = GIT.add;
+      ctx.fillText(adds, start, countY);
+      if (dels) {
+        ctx.fillStyle = GIT.del;
+        ctx.fillText(dels, start + aw, countY);
+      }
+      placed.push({ x0: start - 2, x1: start + aw + dw + 2, y0: countY - 11, y1: countY + 2 });
+    };
+    ctx.save();
+    for (const item of queue) drawOne(item, 0);
+    ctx.restore();
   }
 
   positionHopCard() {
@@ -1898,6 +1884,245 @@ export class CodeGraphEngine extends React.Component {
     const y = Math.min((this.h || 600) - 80, Math.max(8, sc.y + 16));
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
+  }
+
+  positionTooltip() {
+    const el = this.tipRef?.current;
+    if (!el) return;
+    const n = this.hover;
+    if (!n) {
+      el.style.visibility = 'hidden';
+      return;
+    }
+    const side = nodeSide(n) * this.view.k;
+    const sc = this.worldToScreen(n.x, n.y);
+    const w = el.offsetWidth || 280;
+    const h = el.offsetHeight || 88;
+    const obstacles = [];
+    const addBox = (node) => {
+      const p = this.worldToScreen(node.x, node.y);
+      const s = nodeSide(node) * this.view.k / 2 + 22;
+      obstacles.push({ x0: p.x - s, y0: p.y - s - 26, x1: p.x + s, y1: p.y + s + 18 });
+    };
+    addBox(n);
+    for (const other of this.neighborsOf(n)) if (other && other !== n) addBox(other);
+    for (const r of this.rects || []) {
+      const x0 = this.view.x + r.x0 * this.view.k;
+      const y0 = this.view.y + r.y0 * this.view.k;
+      const x1 = this.view.x + r.x1 * this.view.k;
+      obstacles.push({ x0, y0: y0 - 2, x1, y1: y0 + 22 });
+    }
+    const overlapArea = (x, y) => obstacles.reduce((sum, o) => {
+      const wOver = Math.min(x + w, o.x1) - Math.max(x, o.x0);
+      const hOver = Math.min(y + h, o.y1) - Math.max(y, o.y0);
+      return sum + (wOver > 0 && hOver > 0 ? wOver * hOver : 0);
+    }, 0);
+    const clamp = (x, y) => [
+      Math.max(8, Math.min((this.w || 0) - w - 8, x)),
+      Math.max(8, Math.min((this.h || 0) - h - 76, y)),
+    ];
+    const spots = [
+      [sc.x + side / 2 + 20, sc.y - h / 2],
+      [sc.x - side / 2 - w - 20, sc.y - h / 2],
+      [sc.x + side / 2 + 20, sc.y + side / 2 + 28],
+      [sc.x - side / 2 - w - 20, sc.y + side / 2 + 28],
+      [sc.x - w / 2, sc.y - side / 2 - h - 36],
+    ];
+    let best = clamp(spots[0][0], spots[0][1]);
+    let bestArea = Infinity;
+    for (const [x, y] of spots) {
+      const spot = clamp(x, y);
+      const area = overlapArea(spot[0], spot[1]);
+      if (area < bestArea) { best = spot; bestArea = area; }
+      if (area === 0) break;
+    }
+    const left = best[0];
+    const top = best[1];
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+    el.style.visibility = 'visible';
+  }
+
+  noteZoom() {
+    if (this._dead) return;
+    const pct = Math.round((this.view?.k || 1) * 100);
+    if (this.state.zoomPct === pct) return;
+    this.setState({ zoomPct: pct });
+  }
+
+  zoomBy(factor) {
+    const cx = (this.w || 1) / 2;
+    const cy = (this.h || 1) / 2;
+    const k = Math.min(4, Math.max(0.15, this.view.k * factor));
+    const r = k / this.view.k;
+    this.view.x = cx - (cx - this.view.x) * r;
+    this.view.y = cy - (cy - this.view.y) * r;
+    this.view.k = k;
+    this.noteZoom();
+    this.kick();
+  }
+
+  setFilesMode(mode) {
+    if (mode === 'focus') {
+      const turnOn = () => { if (!this.state.focusOn) this.toggleFocus(); else this.queueFit({ all: true }); };
+      if (this.state.onlyGit) this.setState({ onlyGit: false }, () => { this.applyFilter(); turnOn(); });
+      else turnOn();
+      return;
+    }
+    const leaveFocus = (done) => {
+      if (!this.state.focusOn) { done(); return; }
+      this.restoreFocusPositions();
+      this.setState({ focusOn: false }, () => { this.writeFocusUrl(); done(); });
+    };
+    if (mode === 'changed') {
+      leaveFocus(() => this.setState({ onlyGit: true, highlightGit: true }, () => {
+        this.applyFilter();
+        const ns = (this.nodes || []).filter((n) => n.gitChanged && !n.off);
+        if (ns.length) this.fitNodes(ns, { pad: 72, maxK: 2.2 });
+        else this.queueFit({ all: true });
+      }));
+      return;
+    }
+    leaveFocus(() => this.setState({ onlyGit: false }, () => {
+      this.applyFilter();
+      this.queueFit({ all: true });
+    }));
+  }
+
+  toggleOnlyChangedImports() {
+    this.setState((st) => ({ onlyChangedImports: !st.onlyChangedImports }), () => this.applyFilter());
+  }
+
+  toggleTestsUnified() {
+    const hideTests = !this.state.hideTests;
+    this.patchFocus({ hideTests, focusHideTests: hideTests });
+  }
+
+  toggleApiHops() {
+    const on = !(this.state.showCalls && this.state.showHops !== false);
+    this.setState({ showCalls: on, showHops: on }, () => {
+      if (!on) this.selectHop(null);
+      this.applyFilter();
+    });
+  }
+
+  resetView() {
+    if (this.state.focusOn) this.restoreFocusPositions();
+    this._gitHighlightPinned = this.state.gitFileCount > 0 ? true : null;
+    this.setState({
+      folderDepth: 2,
+      hideTests: true,
+      hideGenerated: true,
+      showCalls: true,
+      showHops: true,
+      highlightGit: this.state.gitFileCount > 0,
+      onlyGit: false,
+      onlyChangedImports: false,
+      focusOn: false,
+      focusSeedMode: 'changed',
+      focusSeeds: [],
+      focusHops: 1,
+      focusDir: 'both',
+      focusPins: [],
+      focusHideTests: true,
+      focusHopsTouched: false,
+      focusPick: null,
+      focusQuery: '',
+      query: '',
+    }, () => {
+      this.props.onQueryChange?.('');
+      this.cells = null;
+      this.frames = null;
+      this.applyFilter();
+      this.writeFocusUrl();
+      this.queueFit({ all: true });
+    });
+  }
+
+  copyViewLink() {
+    const url = typeof window !== 'undefined' ? window.location.href : '';
+    const done = () => {
+      this.setState({ focusCopied: 'Copied' });
+      clearTimeout(this._copyTimer);
+      this._copyTimer = setTimeout(() => {
+        if (!this._dead) this.setState({ focusCopied: '' });
+      }, 1400);
+    };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(done).catch(done);
+    else done();
+  }
+
+  graphSummary() {
+    let adds = 0;
+    let dels = 0;
+    let imports = 0;
+    let risky = 0;
+    for (const n of this.nodes || []) {
+      if (!n.gitChanged) continue;
+      adds += n.gitAdds || 0;
+      dels += n.gitDels || 0;
+    }
+    for (const l of this.links || []) {
+      if (!l.s || !l.t) continue;
+      if ((!l.kind || l.kind === 'import') && (l.s.gitStatus === 'A' || l.t.gitStatus === 'A')) imports += 1;
+      const kind = hopKindOf(l);
+      if (kind && (kind.endsWith('write') || kind === 'job') && l.s.gitChanged) risky += 1;
+    }
+    const counts = this.state.gitCounts || {};
+    return {
+      kind: 'files',
+      files: (counts.A || 0) + (counts.M || 0) + (counts.D || 0),
+      adds, dels, imports, risky,
+    };
+  }
+
+  hoverTip() {
+    const n = this.state.hoverId ? this.byId?.[this.state.hoverId] : null;
+    if (!n) return null;
+    let imports = 0;
+    let importedBy = 0;
+    for (const l of this.links || []) {
+      if (l.kind && l.kind !== 'import') continue;
+      if (l.s === n) imports += 1;
+      if (l.t === n) importedBy += 1;
+    }
+    const slash = n.id.lastIndexOf('/');
+    return {
+      name: n.label || n.name,
+      adds: n.gitAdds || 0,
+      dels: n.gitDels || 0,
+      changed: !!n.gitChanged,
+      summary: n.summary || '',
+      path: slash > 0 ? n.id.slice(0, slash) : n.id,
+      lines: n.lines || 0,
+      imports,
+      importedBy,
+    };
+  }
+
+  statusLine() {
+    const total = (this.nodes || []).length;
+    const shown = (this.active || this.nodes || []).length;
+    const bits = [];
+    if (this.state.focusOn) {
+      const hops = this.state.focusHops;
+      const from = this.state.focusSeedMode === 'picked' ? 'picked files' : 'changed files';
+      bits.push('Focus', `${from} + ${hops} hop${hops === 1 ? '' : 's'}`);
+    } else if (this.state.onlyGit) bits.push('Changed only');
+    else bits.push('All files');
+    bits.push(`${shown} of ${total} files`);
+    if (this.state.hideTests) bits.push('tests hidden');
+    if (!this.state.hideGenerated) bits.push('generated shown');
+    bits.push('size = lines');
+    return bits.join(' · ');
+  }
+
+  publishApi() {
+    if (!this.props.onGraphApi || this._dead) return;
+    const api = this.renderVals();
+    if (api.sig === this._apiSig) return;
+    this._apiSig = api.sig;
+    this.props.onGraphApi(api);
   }
 
   focusGraph() {
@@ -2401,6 +2626,31 @@ export class CodeGraphEngine extends React.Component {
         else this.addFocusSeed(id);
       },
       copyFocusJson: () => this.copyFocusJson(),
+      hideTests: this.state.hideTests,
+      hideGenerated: this.state.hideGenerated,
+      onlyChangedImports: !!this.state.onlyChangedImports,
+      zoomLabel: `${this.state.zoomPct || Math.round((this.view?.k || 1) * 100)}%`,
+      statusLine: this.statusLine(),
+      graphSummary: this.graphSummary(),
+      hoverTip: this.hoverTip(),
+      setFilesMode: (mode) => this.setFilesMode(mode),
+      toggleOnlyChangedImports: () => this.toggleOnlyChangedImports(),
+      toggleTestsUnified: () => this.toggleTestsUnified(),
+      toggleApiHops: () => this.toggleApiHops(),
+      resetView: () => this.resetView(),
+      copyViewLink: () => this.copyViewLink(),
+      zoomBy: (factor) => this.zoomBy(factor),
+      tipRef: this.tipRef,
+      sig: [
+        this.state.focusOn, this.state.onlyGit, this.state.onlyChangedImports, this.state.focusHops,
+        this.state.focusDir, this.state.folderDepth, this.state.highlightGit, this.state.hideTests,
+        this.state.hideGenerated, this.state.showCalls, this.state.showHops, this.state.focusSeedMode,
+        (this.state.focusSeeds || []).join(','), (this.state.focusPins || []).join(','),
+        this.state.focusPick, this.state.focusQuery, this.state.focusCopied, this.state.zoomPct,
+        this.state.gitFileCount, this.state.gitSummary, this.state.repoName, this.state.hoverId,
+        this.state.branchInput, this.state.compareInput, this.state.query, this.state.stats,
+        this.props.branchError, this.props.comparePr,
+      ].join('|'),
       groups: gs ? gs.keys.map(k => ({
         id: k, label: gs.label(k), color: gs.colorOf(k), count: counts[k] || 0,
         bg: this.state.query === k ? 'var(--color-accent-800)' : 'transparent',

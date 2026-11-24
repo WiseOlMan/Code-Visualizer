@@ -114,6 +114,52 @@ function parseNameStatus(text) {
   return files;
 }
 
+/** `dir/{old => new}/file.js` and `old => new` both yield the destination path. */
+function numstatPath(raw) {
+  const brace = String(raw || '').match(/^(.*)\{([^}]*) => ([^}]*)\}(.*)$/);
+  if (brace) return `${brace[1]}${brace[3]}${brace[4]}`.replace(/\/{2,}/g, '/');
+  const arrow = String(raw || '').lastIndexOf(' => ');
+  if (arrow >= 0) return raw.slice(arrow + 4).trim();
+  return String(raw || '');
+}
+
+function parseNumstat(text) {
+  const map = new Map();
+  if (!text) return map;
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    const parts = line.split('\t');
+    if (parts.length < 3) continue;
+    const additions = parts[0] === '-' ? 0 : Number(parts[0]) || 0;
+    const deletions = parts[1] === '-' ? 0 : Number(parts[1]) || 0;
+    const filePath = numstatPath(parts.slice(2).join('\t')).split(path.sep).join('/');
+    const prev = map.get(filePath) || { additions: 0, deletions: 0 };
+    map.set(filePath, {
+      additions: prev.additions + additions,
+      deletions: prev.deletions + deletions,
+    });
+  }
+  return map;
+}
+
+function diffNumstat(cwd, base) {
+  const rev = resolveRev(cwd, base);
+  if (!rev) return new Map();
+  const ranged = git(cwd, ['diff', '--numstat', '-M', `${rev}...HEAD`]);
+  if (ranged != null) return parseNumstat(ranged);
+  return parseNumstat(git(cwd, ['diff', '--numstat', '-M', rev, 'HEAD']) || '');
+}
+
+function countLines(abs) {
+  try {
+    const text = fs.readFileSync(abs, 'utf8');
+    if (!text) return 0;
+    return text.split('\n').length;
+  } catch {
+    return 0;
+  }
+}
+
 function diffAgainstBase(cwd, base) {
   const rev = resolveRev(cwd, base);
   if (!rev) return [];
@@ -174,6 +220,19 @@ export function collectGitChanges(packages, opts = {}) {
         package: pkg.name || path.basename(pkg.root),
         prefix: pkg.prefix || '',
       });
+    }
+    const committedStat = diffNumstat(pkg.root, requested);
+    const dirtyStat = parseNumstat(git(pkg.root, ['diff', '--numstat', '-M', 'HEAD']) || '');
+    for (const file of byPath.values()) {
+      const committed = committedStat.get(file.path) || { additions: 0, deletions: 0 };
+      const dirty = dirtyStat.get(file.path) || { additions: 0, deletions: 0 };
+      let additions = committed.additions + dirty.additions;
+      let deletions = committed.deletions + dirty.deletions;
+      if (!additions && !deletions && (file.status === 'A' || file.status === '?')) {
+        additions = countLines(path.join(pkg.root, file.path));
+      }
+      file.additions = additions;
+      file.deletions = deletions;
     }
     out.push({
       name: pkg.name || path.basename(pkg.root),
