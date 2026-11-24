@@ -175,6 +175,9 @@ export function chooseCompareBase({
       baseRef: label,
       headRef: prRecord.headRef ? shortBranch(prRecord.headRef) : null,
       title: prRecord.title || null,
+      state: prRecord.state || null,
+      owner: prSpec?.owner || remote?.owner || null,
+      repo: prSpec?.repo || remote?.repo || null,
     },
     note,
   };

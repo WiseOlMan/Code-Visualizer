@@ -14,10 +14,13 @@ import {
   collectGitChanges,
   collectPackageHeads,
   fileDiff,
+  gitRemoteUrl,
   resolveBaseBranch,
   resolveRev,
 } from '../tools/git-changes.mjs';
-import { resolveCompareBase } from '../tools/pr-base.mjs';
+import { parseGithubRemote, resolveCompareBase } from '../tools/pr-base.mjs';
+import { computeFocusView, decodeFocusQuery, normalizeFocusState } from '../client/src/focusView.js';
+import { buildFlowView } from '../tools/flow-model.mjs';
 import {
   checkoutBranch,
   checkoutWorkspace,
@@ -234,6 +237,9 @@ async function buildGitChangesResponse(root, hints = {}) {
   // Stale when HEADs moved, new source files aren't in the graph, or fingerprinted
   // sources actually changed after the snapshot (not mere clock/mtime noise).
   const stale = freshness.stale || missingFromGraph.length > 0 || sourcesNewer.length > 0;
+  const primaryChange = pkgChanges.find((p) => path.resolve(p.root) === path.resolve(primaryRoot)) || pkgChanges[0] || {};
+  const headSha = primaryChange.head || null;
+  const baseSha = primaryChange.baseSha || null;
   return {
     ok: true,
     root,
@@ -242,6 +248,11 @@ async function buildGitChangesResponse(root, hints = {}) {
     baseSource: primary?.source || 'default',
     baseNote: primary?.note || null,
     pr: primary?.pr || null,
+    remote: parseGithubRemote(gitRemoteUrl(primaryRoot) || '') || null,
+    headSha,
+    baseSha,
+    headShort: headSha ? String(headSha).slice(0, 8) : null,
+    baseShort: baseSha ? String(baseSha).slice(0, 8) : null,
     packages: pkgChanges.map((p) => ({
       name: p.name,
       prefix: p.prefix,
@@ -249,6 +260,7 @@ async function buildGitChangesResponse(root, hints = {}) {
       branch: p.branch,
       base: p.base,
       head: p.head,
+      baseSha: p.baseSha || null,
       fileCount: p.files.length,
     })),
     files,
@@ -638,6 +650,114 @@ app.get('/api/workspace', (req, res) => {
   const snap = loadWorkspaceSnapshot(root);
   if (!snap) return res.status(404).json({ error: 'No saved workspace for that root' });
   res.json(snap);
+});
+
+/** Fill changed-file seeds and short SHAs when the caller didn't send them. */
+async function focusStateWithGit(root, raw) {
+  const state = normalizeFocusState(raw);
+  if (!root) return state;
+  const needChanged = state.changed.length === 0;
+  const needSha = !state.head || !state.baseSha;
+  if (!needChanged && !needSha) return state;
+  try {
+    const hints = state.base ? { base: state.base } : {};
+    const git = await buildGitChangesResponse(root, hints);
+    if (needChanged) {
+      state.changed = (git.files || [])
+        .filter((f) => f.graphId)
+        .map((f) => ({ id: f.graphId, status: f.status }));
+    }
+    if (!state.head) state.head = git.headSha || '';
+    if (!state.baseSha) state.baseSha = git.baseSha || '';
+    if (!state.base && git.baseLabel) state.base = git.baseLabel;
+  } catch (err) {
+    console.error('[focus] git', err);
+  }
+  return state;
+}
+
+function graphForFocus(root, inline) {
+  if (inline && Array.isArray(inline.nodes)) return inline;
+  if (!root) return null;
+  return loadWorkspaceSnapshot(root)?.graph || null;
+}
+
+app.get('/api/focus', async (req, res) => {
+  try {
+    const root = req.query.root ? String(req.query.root) : state.root;
+    const graph = graphForFocus(root, null);
+    if (!graph) return res.status(404).json({ error: 'No graph' });
+    const query = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+    const decoded = decodeFocusQuery(query);
+    decoded.on = true;
+    const focusState = await focusStateWithGit(root, decoded);
+    res.json(computeFocusView(graph, focusState));
+  } catch (err) {
+    console.error('[focus]', err);
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+app.post('/api/focus', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const root = body.root ? String(body.root) : state.root;
+    const graph = graphForFocus(root, body.graph);
+    if (!graph) return res.status(404).json({ error: 'No graph' });
+    const raw = body.state && typeof body.state === 'object' ? body.state : body;
+    const focusState = await focusStateWithGit(root, { ...raw, on: true });
+    res.json(computeFocusView(graph, focusState));
+  } catch (err) {
+    console.error('[focus]', err);
+    res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+const flowCache = new Map();
+
+app.get('/api/flow', async (req, res) => {
+  const root = req.query.root ? String(req.query.root) : state.root;
+  if (!root) return res.status(400).json({ error: 'Missing root' });
+  try {
+    const gitInfo = await buildGitChangesResponse(root, compareHintsFromQuery(req.query));
+    const { packages } = packagesForRoot(root);
+    const primaryRoot = packages.find((pkg) => path.resolve(pkg.root) === path.resolve(root))?.root || packages[0]?.root || root;
+    const baseRev = gitInfo.baseSha || (gitInfo.baseLabel ? resolveRev(primaryRoot, gitInfo.baseLabel) : null);
+    const merged = String(gitInfo.pr?.state || '').toUpperCase() === 'MERGED';
+    let mainRev = null;
+    if (merged) {
+      const mainName = resolveBaseBranch(primaryRoot);
+      mainRev = mainName ? resolveRev(primaryRoot, mainName) : null;
+    }
+    const changes = (gitInfo.files || [])
+      .filter((file) => CODE_EXT.has(path.extname(file.path || file.graphId || '')))
+      .map((file) => {
+        const prefix = file.prefix || '';
+        const pkg = packages.find((item) => (item.prefix || '') === prefix) || packages[0];
+        return { ...file, root: pkg?.root || primaryRoot };
+      });
+    const focusId = req.query.fn ? String(req.query.fn) : '';
+    const key = [root, gitInfo.headSha || '', baseRev || '', mainRev || '', focusId, changes.map((file) => `${file.graphId}:${file.status}`).join(',')].join('|');
+    const cached = flowCache.get(key);
+    if (cached) return res.json(cached);
+    const payload = buildFlowView({
+      root,
+      changes,
+      baseRev,
+      baseLabel: gitInfo.baseLabel,
+      headSha: gitInfo.headSha,
+      baseSha: gitInfo.baseSha,
+      merged,
+      mainRev,
+      focusId,
+    });
+    flowCache.set(key, payload);
+    if (flowCache.size > 12) flowCache.delete(flowCache.keys().next().value);
+    res.json(payload);
+  } catch (err) {
+    console.error('[flow]', err);
+    res.status(500).json({ error: err.message || String(err) });
+  }
 });
 
 app.get('/api/git/changes', async (req, res) => {
