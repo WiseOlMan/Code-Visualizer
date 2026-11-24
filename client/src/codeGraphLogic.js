@@ -931,7 +931,6 @@ export class CodeGraphEngine extends React.Component {
         byDiff.set(f.graphId, {
           additions: Number(f.additions) || 0,
           deletions: Number(f.deletions) || 0,
-          moved: Number(f.moved) || 0,
           summary: f.summary || '',
           lines: Number(f.lines) || 0,
         });
@@ -1000,7 +999,6 @@ export class CodeGraphEngine extends React.Component {
       const diff = byDiff.get(n.id);
       n.gitAdds = diff?.additions || (n.gitStatus === 'A' ? (n.lines || 0) : 0);
       n.gitDels = diff?.deletions || 0;
-      n.gitMoved = diff?.moved || 0;
       n.gitSummary = diff?.summary || '';
       if (!n.lines && diff?.lines) n.lines = diff.lines;
       if (n.gitStatus === 'A' && !n.lines && n.gitAdds) {
@@ -1030,7 +1028,6 @@ export class CodeGraphEngine extends React.Component {
           inDeg: 0, outDeg: 0, isEndpoint: false, url: null,
           gitAdds: byDiff.get(graphId)?.additions || 0,
           gitDels: byDiff.get(graphId)?.deletions || 0,
-          gitMoved: byDiff.get(graphId)?.moved || 0,
           gitSummary: byDiff.get(graphId)?.summary || '',
           lines: byDiff.get(graphId)?.deletions || 24,
           x: (anchor?.x ?? W / 2) + (Math.random() - 0.5) * 40,
@@ -1763,7 +1760,7 @@ export class CodeGraphEngine extends React.Component {
       const x0 = n.x - h;
       const y0 = n.y - h;
       const changed = showGit && (n.gitChanged || n.gitStatus);
-      const fr = changed ? fillFractions(n.gitAdds, n.gitDels, n.lines, n.gitStatus, n.gitMoved) : null;
+      const fr = changed ? fillFractions(n.gitAdds, n.gitDels, n.lines, n.gitStatus) : null;
       const ringOn = n === this.hover || n === sel || n === labeled;
       ctx.save();
       ctx.globalAlpha = alpha;
@@ -1774,23 +1771,16 @@ export class CodeGraphEngine extends React.Component {
         ctx.fillStyle = INK.bg;
         ctx.fillRect(x0, y0, side, side);
         const gH = side * (fr.g || 0);
-        const mH = side * (fr.m || 0);
         const rH = fr.r ? Math.max(side * fr.r, n.gitDels ? 2.5 / k : 0) : 0;
         ctx.globalAlpha = alpha * 0.85;
         if (gH) {
           ctx.fillStyle = GIT.add;
           ctx.fillRect(x0, y0 + side - gH, side, gH);
         }
-        if (mH) {
-          ctx.fillStyle = TEAL;
-          ctx.globalAlpha = alpha * 0.8;
-          ctx.fillRect(x0, y0 + side - gH - mH, side, mH);
-        }
         if (rH) {
           ctx.globalAlpha = alpha * 0.9;
           ctx.fillStyle = GIT.del;
-          const redY = fr.m ? (y0 + side - gH - mH) : (y0 + side - gH - rH);
-          ctx.fillRect(x0, redY, side, rH);
+          ctx.fillRect(x0, y0 + side - gH - rH, side, rH);
         }
       } else {
         const light = (focus && on) ? 0.16 : 0.07;
@@ -1868,8 +1858,7 @@ export class CodeGraphEngine extends React.Component {
       if (!item.changed) return;
       const countY = sc.y - half - 4;
       const bits = [];
-      if (n.gitMoved) bits.push({ text: `↔${n.gitMoved}`, color: TEAL });
-      if (n.gitAdds) bits.push({ text: `${bits.length ? ' ' : ''}+${n.gitAdds}`, color: GIT.add });
+      if (n.gitAdds) bits.push({ text: `+${n.gitAdds}`, color: GIT.add });
       if (n.gitDels) bits.push({ text: `${bits.length ? ' ' : ''}−${n.gitDels}`, color: GIT.del });
       ctx.font = `11px ${mono}`;
       const widths = bits.map((bit) => ctx.measureText(bit.text).width);
@@ -2110,13 +2099,11 @@ export class CodeGraphEngine extends React.Component {
       name: n.label || n.name,
       adds: n.gitAdds || 0,
       dels: n.gitDels || 0,
-      moved: n.gitMoved || 0,
       changed: !!n.gitChanged,
       summary: fallbackSummary({
         summary: n.gitSummary || n.summary || '',
         adds: n.gitAdds || 0,
         dels: n.gitDels || 0,
-        moved: n.gitMoved || 0,
       }),
       path: slash > 0 ? n.id.slice(0, slash) : n.id,
       lines: n.lines || 0,

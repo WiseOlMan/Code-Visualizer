@@ -17,39 +17,27 @@ export function sideFromRadius(r) {
 }
 
 /**
- * Fractions of the square. Green = added, teal (`m`) = moved in, red = true removals.
- * Moved-in lines stay in the body of the square. Red is only the removal share,
- * and a file that is mostly moved keeps a small red cap instead of turning solid red.
- * @returns {{ g: number, r: number, m: number } | null}
+ * Fractions of the square. Green = added, red = removed. A move is those two, not a third color.
+ * @returns {{ g: number, r: number } | null}
  */
-export function fillFractions(adds, dels, lines, status, moved = 0) {
+export function fillFractions(adds, dels, lines, status) {
   const st = String(status || '');
+  if (st === 'A' || st === 'added') return { g: 1, r: 0 };
+  if (st === 'D' || st === 'deleted') return { g: 0, r: 1 };
   const a = Math.max(0, Number(adds) || 0);
   const d = Math.max(0, Number(dels) || 0);
-  const mv = Math.max(0, Number(moved) || 0);
-  if ((st === 'A' || st === 'added') && !mv) return { g: 1, r: 0, m: 0 };
-  if ((st === 'D' || st === 'deleted') && !mv && !a) return { g: 0, r: 1, m: 0 };
-  const ln = Math.max(1, Number(lines) || a + mv || d || 1);
-  if (!a && !d && !mv) return null;
-  if (!mv) {
-    const changed = a + d;
-    const fr = Math.min(1, 0.2 + 0.8 * Math.sqrt(changed / Math.max(changed, ln)));
-    return { g: (fr * a) / changed, r: (fr * d) / changed, m: 0 };
-  }
-  const body = Math.max(ln, a + mv);
-  const g = Math.min(1, a / body);
-  const m = Math.min(1 - g, mv / body);
-  const share = d / (a + mv + d);
-  const r = d ? (mv > d ? Math.min(0.22, Math.max(0.06, share * 0.4)) : Math.min(0.85, Math.max(0.08, share))) : 0;
-  return { g, m, r };
+  const changed = a + d;
+  if (!changed) return null;
+  const ln = Math.max(changed, Number(lines) || changed);
+  const fr = Math.min(1, 0.2 + 0.8 * Math.sqrt(changed / ln));
+  return { g: (fr * a) / changed, r: (fr * d) / changed };
 }
 
-/** One line for a hover card when the file has no stored summary. */
-export function fallbackSummary({ summary, adds = 0, dels = 0, moved = 0 } = {}) {
-  const given = String(summary || '').replace(/\s+/g, ' ').trim();
+/** One line for a hover card. Wording is adds / edits / removes. */
+export function fallbackSummary({ summary, adds = 0, dels = 0 } = {}) {
+  const given = String(summary || '').replace(/\s+/g, ' ').replace(/\bmoves\b/g, 'adds').trim();
   if (given) return given.length > 110 ? `${given.slice(0, 107)}…` : given;
   const bits = [];
-  if (moved) bits.push(`moves in ${moved} lines`);
   if (adds && dels) bits.push(`adds ${adds}, removes ${dels}`);
   else if (adds) bits.push(`adds ${adds} lines`);
   else if (dels) bits.push(`removes ${dels} lines`);

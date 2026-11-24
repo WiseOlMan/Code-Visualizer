@@ -72,23 +72,21 @@ function ancestorsOf(flow, selectedId) {
   return keep;
 }
 
-function DiffSquare({ adds, dels, lines, status, size, moved = 0 }) {
-  const mapped = status === 'added' || status === 'A' ? 'A' : status === 'deleted' || status === 'D' ? 'D' : status;
-  const fr = fillFractions(adds, dels, lines, mapped, moved);
+function DiffSquare({ adds, dels, lines, status, size }) {
+  const mapped = status === 'added' || status === 'A' || status === 'moved' ? 'A'
+    : status === 'deleted' || status === 'D' ? 'D' : status;
+  const fr = fillFractions(adds, dels, lines, mapped);
   const radius = Math.max(3, size * 0.22);
   if (!fr) {
     return <span className="dsq hollow" style={{ width: size, height: size, borderRadius: radius }} />;
   }
   const g = (fr.g || 0) * 100;
-  const m = (fr.m || 0) * 100;
   const r = (fr.r || 0) * 100;
-  const redPct = Math.max(r, (2.5 / size) * 100);
-  const redBottom = fr.m ? Math.max(g, g + m - redPct) : g;
+  const redPct = Math.max(r, dels > 0 ? (2.5 / size) * 100 : 0);
   return (
     <span className="dsq" style={{ width: size, height: size, borderRadius: radius }}>
       {g > 0 && <i style={{ bottom: 0, height: `${g}%`, background: 'rgba(46,255,122,.85)' }} />}
-      {m > 0 && <i style={{ bottom: `${g}%`, height: `${m}%`, background: 'rgba(110,200,212,.88)' }} />}
-      {r > 0 && <i style={{ bottom: `${redBottom}%`, height: `${redPct}%`, background: 'rgba(255,77,94,.9)' }} />}
+      {r > 0 && <i style={{ bottom: `${g}%`, height: `${redPct}%`, background: 'rgba(255,77,94,.9)' }} />}
     </span>
   );
 }
@@ -295,9 +293,8 @@ export function FlowView({
       }
     }
     for (const fn of file.functions) lines = Math.max(lines, fn.endLine || 0);
-    const status = git?.status === 'R' || git?.status === 'C' ? 'M' : (git?.status || (adds + dels ? 'M' : ''));
-    const moved = Number(git?.moved) || 0;
-    return { adds, dels, moved, lines: lines || git?.lines || adds + moved || 24, status };
+    const status = git?.status || (adds && !dels ? 'A' : dels && !adds ? 'D' : (adds + dels ? 'M' : ''));
+    return { adds, dels, lines: lines || git?.lines || adds || dels || 24, status };
   }
 
   const status = showingIndex
@@ -376,7 +373,7 @@ export function FlowView({
                                 <div className="d">{parts.dir}</div>
                                 <div className="f">{parts.name}</div>
                               </div>
-                              <DiffSquare adds={stat.adds} dels={stat.dels} moved={stat.moved} lines={stat.lines} status={stat.status} size={side} />
+                              <DiffSquare adds={stat.adds} dels={stat.dels} lines={stat.lines} status={stat.status} size={side} />
                             </div>
                             {file.functions.map((fn) => {
                               const view = markView(fn, mark);
@@ -402,7 +399,7 @@ export function FlowView({
                                   <span className="m">
                                     {view.tag === 'moved' && (
                                       <span className="flow-new" style={{ color: '#d2cefd' }} title={fn.movedFromLabel ? `moved from ${fn.movedFromLabel}` : 'moved'}>
-                                        {fn.movedFromLabel ? `from ${String(fn.movedFromLabel).split('/').pop()}` : 'moved'}
+                                        {fn.movedFromLabel ? `moved from ${fn.movedFromLabel}` : 'moved'}
                                       </span>
                                     )}
                                     {fn.status === 'added' && <span className="flow-new">NEW</span>}

@@ -150,9 +150,9 @@ function parseNumstat(text) {
 function diffNumstat(cwd, base) {
   const rev = resolveRev(cwd, base);
   if (!rev) return new Map();
-  const ranged = git(cwd, ['diff', '--numstat', '-M', `${rev}...HEAD`]);
+  const ranged = git(cwd, ['diff', '--numstat', '--no-renames', `${rev}...HEAD`]);
   if (ranged != null) return parseNumstat(ranged);
-  return parseNumstat(git(cwd, ['diff', '--numstat', '-M', rev, 'HEAD']) || '');
+  return parseNumstat(git(cwd, ['diff', '--numstat', '--no-renames', rev, 'HEAD']) || '');
 }
 
 function countLines(abs) {
@@ -203,29 +203,25 @@ function clip(text, max = 110) {
   return `${clean.slice(0, max - 1).trimEnd()}…`;
 }
 
-/** One line: leading comment, then moved / added / edited / removed names. */
-function changeSummary(headSrc, baseSrc, { renamed = false } = {}) {
+/** One line: adds / edits / removes, then the leading comment when it fits. A move is an add plus a remove. */
+function changeSummary(headSrc, baseSrc) {
   const head = functionSpans(headSrc);
   const base = functionSpans(baseSrc);
   const added = [];
   const edited = [];
-  const moved = [];
   const removed = [];
   for (const [name, body] of head) {
-    if (!base.has(name)) {
-      (renamed ? moved : added).push(name);
-    } else if (base.get(name) !== body) edited.push(name);
-    else if (renamed) moved.push(name);
+    if (!base.has(name)) added.push(name);
+    else if (base.get(name) !== body) edited.push(name);
   }
   for (const name of base.keys()) {
     if (!head.has(name)) removed.push(name);
   }
   const bits = [];
-  if (moved.length) bits.push(`moves ${moved.slice(0, 3).join(', ')}`);
   if (added.length) bits.push(`adds ${added.slice(0, 3).join(', ')}`);
   if (edited.length) bits.push(`edits ${edited.slice(0, 3).join(', ')}`);
   if (removed.length) bits.push(`removes ${removed.slice(0, 2).join(', ')}`);
-  const comment = leadingComment(headSrc);
+  const comment = leadingComment(headSrc) || leadingComment(baseSrc);
   const actions = bits.join(' · ');
   let text = actions;
   if (comment && actions && actions.length + comment.length + 3 <= 110) text = `${actions} · ${comment}`;
@@ -237,9 +233,9 @@ function diffAgainstBase(cwd, base) {
   const rev = resolveRev(cwd, base);
   if (!rev) return [];
   // Three-dot: changes on this branch since merge-base with base.
-  const ranged = git(cwd, ['diff', '--name-status', `${rev}...HEAD`]);
+  const ranged = git(cwd, ['diff', '--name-status', '--no-renames', `${rev}...HEAD`]);
   if (ranged != null) return parseNameStatus(ranged);
-  const two = git(cwd, ['diff', '--name-status', rev, 'HEAD']);
+  const two = git(cwd, ['diff', '--name-status', '--no-renames', rev, 'HEAD']);
   return parseNameStatus(two || '');
 }
 
@@ -252,12 +248,22 @@ function uncommitted(cwd) {
     // Porcelain: two status chars, then a space, then the path.
     const status = (line[0] !== ' ' ? line[0] : line[1]) || 'M';
     let filePath = line[2] === ' ' ? line.slice(3) : line.slice(2).trimStart();
-    // renames: "R  old -> new"
-    if (filePath.includes(' -> ')) filePath = filePath.split(' -> ').pop();
+    // renames: record the old path too, then split into a delete and an add below
+    let oldPath = null;
+    if (filePath.includes(' -> ')) {
+      const bits = filePath.split(' -> ');
+      oldPath = bits[0];
+      filePath = bits.pop();
+    }
     if (filePath.startsWith('"') && filePath.endsWith('"')) filePath = filePath.slice(1, -1);
     filePath = filePath.trim();
     if (!filePath) continue;
-    files.push({ path: filePath.split(path.sep).join('/'), status, uncommitted: true });
+    files.push({
+      path: filePath.split(path.sep).join('/'),
+      oldPath: oldPath ? oldPath.split(path.sep).join('/') : null,
+      status,
+      uncommitted: true,
+    });
   }
   return files;
 }
@@ -281,7 +287,16 @@ export function collectGitChanges(packages, opts = {}) {
     // Always include uncommitted so WIP shows even on main
     const dirty = uncommitted(pkg.root);
     const byPath = new Map();
+    const flat = [];
     for (const f of [...committed, ...dirty]) {
+      if ((f.status === 'R' || f.status === 'C') && f.oldPath && f.oldPath !== f.path) {
+        flat.push({ ...f, path: f.oldPath, oldPath: null, status: 'D' });
+        flat.push({ ...f, oldPath: null, status: 'A' });
+      } else {
+        flat.push(f);
+      }
+    }
+    for (const f of flat) {
       const graphId = toGraphId(pkg.prefix, f.path);
       if (!graphId) continue;
       const prev = byPath.get(graphId);
@@ -296,32 +311,26 @@ export function collectGitChanges(packages, opts = {}) {
       });
     }
     const committedStat = diffNumstat(pkg.root, requested);
-    const dirtyStat = parseNumstat(git(pkg.root, ['diff', '--numstat', '-M', 'HEAD']) || '');
+    const dirtyStat = parseNumstat(git(pkg.root, ['diff', '--numstat', '--no-renames', 'HEAD']) || '');
     for (const file of byPath.values()) {
       const committed = committedStat.get(file.path) || { additions: 0, deletions: 0 };
       const dirty = dirtyStat.get(file.path) || { additions: 0, deletions: 0 };
       let additions = committed.additions + dirty.additions;
       let deletions = committed.deletions + dirty.deletions;
       const abs = path.join(pkg.root, file.path);
-      const headSrc = readFile(abs);
-      const lines = headSrc ? headSrc.split('\n').length : 0;
-      if (!additions && !deletions && (file.status === 'A' || file.status === '?')) {
-        additions = lines;
-      }
-      const renamed = file.status === 'R' || file.status === 'C';
-      const moved = renamed ? Math.max(0, lines - additions) : 0;
+      let headSrc = readFile(abs);
+      const deleted = file.status === 'D';
+      const added = file.status === 'A' || file.status === '?';
+      const baseSrc = rev && !added ? (git(pkg.root, ['show', `${rev}:${file.path}`]) || '') : '';
+      if (deleted) headSrc = '';
+      const lines = (deleted ? baseSrc : headSrc) ? (deleted ? baseSrc : headSrc).split('\n').length : 0;
+      if (!additions && !deletions && added) additions = lines;
+      if (!deletions && deleted) deletions = lines;
       file.additions = additions;
       file.deletions = deletions;
-      file.moved = moved;
       file.lines = lines;
       const code = /\.(jsx?|tsx?|mjs|cjs)$/.test(file.path);
-      if (code) {
-        const basePath = file.oldPath || file.path;
-        const baseSrc = rev ? (git(pkg.root, ['show', `${rev}:${basePath}`]) || '') : '';
-        file.summary = changeSummary(headSrc, renamed || file.status === 'A' ? (renamed ? baseSrc : '') : baseSrc, { renamed });
-      } else {
-        file.summary = '';
-      }
+      file.summary = code ? changeSummary(headSrc, added ? '' : baseSrc) : '';
     }
     out.push({
       name: pkg.name || path.basename(pkg.root),
