@@ -32,9 +32,19 @@ The process prints a `ui` URL (API + viewer on one port). Leave it running. Do *
 ## Screenshot change impact
 
 1. Open the printed URL.
-2. Wait until analyze finishes and the graph is visible.
-3. Confirm the sidebar shows **Changed files only** (branch colors on). If the diff is empty, the UI falls back to the full graph.
-4. Screenshot the graph with computer use. Attach that image to the chat or PR.
+2. Wait until analyze finishes and the page is ready to capture. Do not shoot while the canvas is still settling:
+   - `#root` has `data-graph-ready="true"` (same signal: `window.__codeVizReady === true`).
+   - `window.__codeVizStatus` is `{ ready, state, reason }`.
+   - If `data-graph-state` is `compare-error` or `empty`, stop. The canvas shows `Compare not loaded: <reason>` or `No files in graph`. Report that text. Do not attach the image.
+3. Prefer the waiter. It exits non-zero and writes no file unless the hook is ready:
+
+```bash
+code-explorer screenshot --url http://localhost:8787 --out /tmp/code-explorer.png
+```
+
+Use the same binary you served with (`node "$HOME/code-explorer/cli.mjs" screenshot …` when that is how you started it). `--timeout <ms>` defaults to 45000.
+
+4. Confirm the sidebar shows **Changed files only** when the branch has edits (branch colors on) and the compare line includes `vs main` (or that repo's base). If the diff is empty, the UI falls back to the full graph and the compare line still names the base.
 5. Leave the server up so the user can take over the cloud desktop and click around.
 
 `--all-files` starts on the full graph. Humans can toggle **Changed files only** / **All files** in the sidebar.

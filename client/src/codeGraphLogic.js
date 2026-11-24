@@ -378,7 +378,8 @@ export class CodeGraphEngine extends React.Component {
     this.nodes = []; this.links = []; this.byId = {};
     this.hover = null; this.hoverHop = null; this.drag = null; this.pan = null;
     this.alpha = 1;
-    if (p.initialOnlyGit) this.state = { ...this.state, onlyGit: true };
+    // onlyGit waits for the compare overlay. Filtering before statuses exist
+    // hides every node, and a headless capture then shoots a blank canvas.
   }
 
   componentDidMount() {
@@ -461,6 +462,10 @@ export class CodeGraphEngine extends React.Component {
   }
 
   componentDidUpdate(prev) {
+    if (this.props.layoutEpoch !== prev.layoutEpoch) {
+      this._overlaySettled = false;
+      this._reportedEpoch = null;
+    }
     if (prev.active !== this.props.active) {
       if (this.props.active === false) this.pauseEngine();
       else this.resumeEngine();
@@ -843,7 +848,19 @@ export class CodeGraphEngine extends React.Component {
     this.kick(1);
   }
 
+  settleOverlay(epoch, patch, after) {
+    const generation = (this._overlayGen = (this._overlayGen || 0) + 1);
+    this.setState(patch, () => {
+      if (this._dead || this._overlayGen !== generation) return;
+      if (after) after();
+      this._overlaySettled = this.props.layoutEpoch === epoch;
+      this.kick();
+    });
+  }
+
   applyGitOverlay(gitInfo) {
+    const epoch = this.props.layoutEpoch || '';
+    this._overlaySettled = false;
     const files = gitInfo?.files || [];
     const byStatus = new Map();
     const rank = { A: 3, M: 2, D: 1 };
@@ -862,7 +879,7 @@ export class CodeGraphEngine extends React.Component {
     if (overlaySig === this._gitOverlaySig && this.nodes?.length) {
       // Same change set — refresh banner fields only, don't rebuild nodes/layout.
       const missing = gitInfo?.missingFromGraph?.length || 0;
-      this.setState({
+      this.settleOverlay(epoch, {
         gitStale: !!gitInfo?.stale,
         gitMissing: missing,
         gitSourcesNewer: gitInfo?.sourcesNewer?.length || 0,
@@ -954,7 +971,7 @@ export class CodeGraphEngine extends React.Component {
     } else {
       patch.highlightGit = this._gitHighlightPinned;
     }
-    this.setState(patch, () => {
+    this.settleOverlay(epoch, patch, () => {
       this.applyFilter();
       if (this.props.initialOnlyGit && gitFileCount && !this._focusedGitOnce) {
         this._focusedGitOnce = true;
@@ -973,7 +990,7 @@ export class CodeGraphEngine extends React.Component {
     for (const n of this.nodes) {
       // "Changed only" wins: show every git-touched file (incl. tests) and keep
       // folder cells rebuilt from that set so foldering stays intact.
-      if (onlyGit) {
+      if (onlyGit && this._gitOverlaySig != null) {
         n.off = !n.gitChanged;
       } else {
         n.off =
@@ -1749,6 +1766,15 @@ export class CodeGraphEngine extends React.Component {
       ctx.restore();
     }
     this.positionHopCard();
+    this.noteLayoutFrame();
+  }
+
+  noteLayoutFrame() {
+    const epoch = this.props.layoutEpoch;
+    if (!epoch || !this._overlaySettled || !this.w || !this.h) return;
+    if (this._reportedEpoch === epoch) return;
+    this._reportedEpoch = epoch;
+    this.props.onLayoutFrame?.(epoch);
   }
 
   positionHopCard() {
@@ -1865,6 +1891,7 @@ export class CodeGraphEngine extends React.Component {
       legendRef: this.legendRef,
       repoName: this.state.repoName || 'codebase',
       statLine: this.state.stats || 'loading…',
+      captureBanner: this.props.captureBanner || '',
       query: this.state.query,
       sidebarOpen: this.props.sidebarOpen !== false,
       panelTab: this.state.panelTab || 'details',

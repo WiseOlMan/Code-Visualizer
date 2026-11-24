@@ -245,6 +245,32 @@ export class CodeExplorer extends CodeGraphEngine {
         <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
           <canvas ref={v.canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', cursor: 'grab' }} />
 
+          {v.captureBanner && (
+            <div
+              role="status"
+              data-capture-banner
+              style={{
+                position: 'absolute',
+                top: 56,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 8,
+                maxWidth: 'min(560px, calc(100% - 32px))',
+                padding: '12px 16px',
+                background: '#3a1d24',
+                border: '1px solid #ff8a80',
+                borderRadius: 'var(--radius-md)',
+                color: '#ffd7d4',
+                fontSize: 14,
+                lineHeight: 1.45,
+                textAlign: 'center',
+                boxShadow: 'var(--shadow-md)',
+              }}
+            >
+              {v.captureBanner}
+            </div>
+          )}
+
           <button
             type="button"
             className="btn btn-icon btn-ghost"

@@ -76,6 +76,42 @@ Then the agent runs `node "$HOME/code-explorer/cli.mjs" serve --repo "$PWD"` (or
 
 A Cursor plugin skill in this repo tells agents to prefer PATH, then `npx`, and never `npm i -g`.
 
+## Headless screenshots
+
+Cloud agents screenshot the live UI. The canvas stays blank if the shot is taken before the git compare lands ("Changed files only" hides every node, and the `vs main` line is missing). The page publishes a readiness hook once the graph data **and** the compare have loaded **and** the layout has drawn a frame.
+
+On `#root`:
+
+| Attribute | Meaning |
+|---|---|
+| `data-graph-ready="true"` | Safe to capture |
+| `data-graph-state="loading"` | Still waiting (compare or layout) |
+| `data-graph-state="compare-error"` | Compare failed. Banner: `Compare not loaded: <reason>` |
+| `data-graph-state="empty"` | Compare returned nothing, or the graph has no files. Banner explains which |
+| `data-graph-reason` | Short reason for the banner |
+
+`window.__codeVizReady === true` matches `data-graph-ready`. `window.__codeVizStatus` is `{ ready, state, reason }`.
+
+```bash
+code-explorer screenshot --url http://localhost:8787 --out graph.png
+```
+
+The command polls the hook (default 45s, `--timeout <ms>`). It writes the PNG only when the page is ready. If the state is `compare-error` or `empty`, or the wait times out, it prints one JSON object on stderr and exits non-zero **without** saving an image:
+
+```json
+{"ok":false,"error":"Timed out after 45000ms waiting for data-graph-ready=\"true\"","state":"loading","reason":"waiting for branch diff"}
+```
+
+```json
+{"ok":false,"error":"Compare not loaded: branch diff failed (500)","state":"compare-error","reason":"branch diff failed (500)"}
+```
+
+```json
+{"ok":false,"error":"Compare not loaded: compare returned nothing","state":"empty","reason":"compare returned nothing"}
+```
+
+A failed compare or an empty graph also paints that same text on the canvas, so a shot taken too early still explains itself. Needs Chrome or Chromium on `PATH` (`CHROME_PATH` overrides).
+
 Install the plugin from this GitHub repo, a team marketplace, or a local symlink:
 
 ```bash
