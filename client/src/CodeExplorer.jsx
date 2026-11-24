@@ -244,20 +244,6 @@ function FocusSearch({ v, placeholder }) {
   );
 }
 
-function SidebarIcon({ open }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <rect x="2.5" y="3" width="13" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M7 3.5v11" stroke="currentColor" strokeWidth="1.4" />
-      {open ? (
-        <rect x="3.2" y="3.8" width="3.2" height="10.4" fill="currentColor" opacity="0.85" />
-      ) : (
-        <path d="M9.5 9h4M11.75 7.25L13.5 9l-1.75 1.75" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-      )}
-    </svg>
-  );
-}
-
 export class CodeExplorer extends CodeGraphEngine {
   render() {
     const v = this.renderVals();
@@ -283,6 +269,11 @@ export class CodeExplorer extends CodeGraphEngine {
         )}
         <div className="ex-stage">
           <canvas ref={v.canvasRef} />
+          {v.captureBanner && (
+            <div role="status" data-capture-banner className="ex-capture-banner">
+              {v.captureBanner}
+            </div>
+          )}
           {v.hoverTip && (
             <div ref={v.tipRef} className="ex-tip">
               <div className="t">

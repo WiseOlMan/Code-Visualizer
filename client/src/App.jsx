@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CodeExplorer } from './CodeExplorer.jsx';
 import { FlowView } from './FlowView.jsx';
 import { readExplorerView, writeExplorerParams } from './explorerView.js';
+import { classifyCompareResult, publishGraphReadiness, resolveGraphReadiness } from './graphReadiness.js';
 
 const SESSION_KEY = 'code-explorer-session';
 
@@ -65,6 +66,8 @@ async function loadTabFromRoot(stub) {
     root: snap.root || stub.root,
     liveGraph: { graph: snap.graph, endpoints: snap.endpoints || { endpoints: [], calls: [] }, soft: false },
     reloadToken: 0,
+    comparePhase: 'pending',
+    compareReason: null,
     busy: false,
     status: '',
     progress: null,
@@ -99,16 +102,21 @@ async function fetchWorkspace(root) {
 }
 
 async function fetchGitChanges(root, { pr, base } = {}) {
-  if (!root) return null;
+  if (!root) return { ok: false, error: 'No workspace root' };
   try {
     const qs = new URLSearchParams({ root });
     if (pr) qs.set('pr', pr);
     else if (base) qs.set('base', base);
     const res = await fetch(`/api/git/changes?${qs}`);
-    if (!res.ok) return null;
-    return res.json();
-  } catch {
-    return null;
+    const data = await res.json().catch(() => null);
+    return {
+      ok: res.ok,
+      status: res.status,
+      data,
+      error: data?.error || null,
+    };
+  } catch (err) {
+    return { ok: false, networkError: true, error: err.message || String(err) };
   }
 }
 
@@ -149,6 +157,8 @@ export default function App() {
   const [branchBusy, setBranchBusy] = useState(false);
   const [branchError, setBranchError] = useState('');
   const [initialOnlyGit, setInitialOnlyGit] = useState(false);
+  const [graphDrawnEpoch, setGraphDrawnEpoch] = useState('');
+  const [flowDrawnEpoch, setFlowDrawnEpoch] = useState('');
   const [explorerView, setExplorerViewState] = useState(readExplorerView);
   const [flowJump, setFlowJump] = useState(null);
   const [graphApi, setGraphApi] = useState(null);
@@ -229,6 +239,8 @@ export default function App() {
             root: boot.repo,
             liveGraph: null,
             reloadToken: 0,
+            comparePhase: 'pending',
+            compareReason: null,
             busy: true,
             status: 'Analyzing…',
             progress: null,
@@ -305,6 +317,8 @@ export default function App() {
             root: health.root || null,
             liveGraph: { graph, endpoints, soft: false },
             reloadToken: 0,
+            comparePhase: health.root ? 'pending' : 'idle',
+            compareReason: null,
             busy: false,
             status: '',
             progress: null,
@@ -337,15 +351,24 @@ export default function App() {
   const refreshGit = useCallback(async (tabId, root) => {
     if (!tabId || !root) return;
     const tab = tabsRef.current.find((t) => t.id === tabId);
-    const gitInfo = await fetchGitChanges(root, { pr: tab?.comparePr || '', base: tab?.compareBase || '' });
-    if (!gitInfo) return;
+    const pr = tab?.comparePr || '';
+    const base = tab?.compareBase || '';
+    const result = await fetchGitChanges(root, { pr, base });
     const current = tabsRef.current.find((t) => t.id === tabId);
-    // Avoid re-rendering / re-laying-out the graph when nothing git-related changed.
-    if (current && gitInfoSig(current.gitInfo) === gitInfoSig(gitInfo)) return;
     // A newer paste can land while this request is in flight — drop the stale one.
-    if ((current?.comparePr || '') !== (tab?.comparePr || '')) return;
-    if ((current?.compareBase || '') !== (tab?.compareBase || '')) return;
-    patchTab(tabId, { gitInfo });
+    if ((current?.comparePr || '') !== pr) return;
+    if ((current?.compareBase || '') !== base) return;
+    const classified = classifyCompareResult(result);
+    if (classified.phase === 'ok') {
+      const gitInfo = result.data;
+      // Avoid re-rendering / re-laying-out the graph when nothing git-related changed.
+      if (current && gitInfoSig(current.gitInfo) === gitInfoSig(gitInfo) && current.comparePhase === 'ok') return;
+      patchTab(tabId, { gitInfo, comparePhase: 'ok', compareReason: null });
+      return;
+    }
+    // A later poll must not wipe a compare the graph already drew.
+    if (current?.comparePhase === 'ok') return;
+    patchTab(tabId, { comparePhase: classified.phase, compareReason: classified.reason });
   }, []);
 
   useEffect(() => {
@@ -421,6 +444,8 @@ export default function App() {
             root: event.root || null,
             liveGraph: { graph: event.graph, endpoints: event.endpoints, soft: false },
             reloadToken: (hit?.reloadToken || 0) + 1,
+            comparePhase: 'pending',
+            compareReason: null,
             busy: true,
             status: `Found ${event.total} files — parsing imports…`,
             progress: { done: 0, total: event.total, file: '', repo: event.repo },
@@ -566,6 +591,41 @@ export default function App() {
     setSearchOpen(false);
   }
 
+  const graphNodes = activeTab?.liveGraph?.graph?.nodes;
+  const needsCompare = !!activeTab?.root;
+  const comparePhase = activeTab?.comparePhase || (needsCompare ? 'pending' : 'idle');
+  const graphSettled = !!(activeTab?.liveGraph?.graph) && !activeTab.busy;
+  const layoutEpoch = graphSettled && (graphNodes?.length || 0) > 0 && (!needsCompare || comparePhase === 'ok')
+    ? `${activeTab.id}:${activeTab.reloadToken}:${gitInfoSig(activeTab.gitInfo)}:${comparePhase}:${explorerView}`
+    : '';
+  const frameDrawn = explorerView === 'flow'
+    ? !!layoutEpoch && flowDrawnEpoch === layoutEpoch
+    : !!layoutEpoch && graphDrawnEpoch === layoutEpoch;
+  const readiness = useMemo(() => resolveGraphReadiness({
+    booted,
+    hasGraph: !!(activeTab?.liveGraph?.graph),
+    busy: !!(activeTab?.busy || globalBusy),
+    nodeCount: graphNodes?.length || 0,
+    needsCompare,
+    comparePhase,
+    compareReason: activeTab?.compareReason || null,
+    frameDrawn,
+  }), [
+    booted,
+    activeTab?.liveGraph?.graph,
+    activeTab?.busy,
+    globalBusy,
+    graphNodes,
+    needsCompare,
+    comparePhase,
+    activeTab?.compareReason,
+    frameDrawn,
+  ]);
+
+  useLayoutEffect(() => {
+    publishGraphReadiness(readiness);
+  }, [readiness]);
+
   const progress = activeTab?.progress;
   const status = activeTab?.status || '';
   const busy = globalBusy || !!activeTab?.busy;
@@ -646,8 +706,6 @@ export default function App() {
                 branchBusy={branchBusy}
                 branchError={on ? branchError : ''}
                 comparePr={tab.comparePr || ''}
-                onComparePr={(value) => patchTab(tab.id, { comparePr: String(value || '').trim() })}
-                onCompareBase={on ? (base) => patchTab(tab.id, { compareBase: String(base || '').trim() }) : undefined}
                 query={on ? explorerQuery : ''}
                 onQueryChange={(q) => {
                   setSearchScope('repo');
@@ -664,6 +722,21 @@ export default function App() {
                   setFlowJump({ file, token: Date.now() });
                   setExplorerView('flow');
                 } : undefined}
+                layoutEpoch={on && explorerView === 'graph' ? layoutEpoch : ''}
+                onLayoutFrame={on && explorerView === 'graph' ? (epoch) => {
+                  setGraphDrawnEpoch((cur) => (cur === epoch ? cur : epoch));
+                } : undefined}
+                captureBanner={on && explorerView === 'graph' ? readiness.banner : ''}
+                onComparePr={(value) => patchTab(tab.id, {
+                  comparePr: String(value || '').trim(),
+                  comparePhase: 'pending',
+                  compareReason: null,
+                })}
+                onCompareBase={on ? (base) => patchTab(tab.id, {
+                  compareBase: String(base || '').trim(),
+                  comparePhase: 'pending',
+                  compareReason: null,
+                }) : undefined}
               />
             </div>
           );
@@ -679,6 +752,11 @@ export default function App() {
               onView={setExplorerView}
               menu={menu}
               graphApi={graphApi}
+              layoutEpoch={layoutEpoch}
+              onLayoutSettled={(epoch) => {
+                setFlowDrawnEpoch((cur) => (cur === epoch ? cur : epoch));
+              }}
+              captureBanner={readiness.banner}
               onShowInGraph={(file) => {
                 setExplorerView('graph');
                 setFocusRequest({ nodeId: file, token: Date.now() });

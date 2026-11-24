@@ -117,7 +117,7 @@ function spreadEdges(edges) {
 
 export function FlowView({
   root, gitInfo, focusFile, focusToken, onShowInGraph, onOpenSource,
-  onView, menu, graphApi, repo,
+  onView, menu, graphApi, repo, layoutEpoch, onLayoutSettled, captureBanner,
 }) {
   const initial = readFlowParams();
   const [data, setData] = useState(null);
@@ -134,6 +134,8 @@ export function FlowView({
   const canvasRef = useRef(null);
   const arrowSig = useRef('');
   const jumpToken = useRef(0);
+  const onLayoutSettledRef = useRef(onLayoutSettled);
+  onLayoutSettledRef.current = onLayoutSettled;
 
   useEffect(() => {
     writeExplorerParams({
@@ -260,12 +262,14 @@ export function FlowView({
 
   useEffect(() => {
     if (loading || error || !laidOut) return undefined;
+    const epoch = layoutEpoch;
     const id = requestAnimationFrame(() => {
       document.documentElement.dataset.explorerView = 'flow';
       document.documentElement.dataset.explorerReady = '1';
+      if (epoch) onLayoutSettledRef.current?.(epoch);
     });
     return () => cancelAnimationFrame(id);
-  }, [loading, error, laidOut]);
+  }, [loading, error, laidOut, layoutEpoch]);
 
   const modes = data?.modes || [
     { id: 'before', label: 'main' },
@@ -319,6 +323,11 @@ export function FlowView({
         mark={{ value: mark, modes, onChange: setMark }}
       />
       <div className="ex-stage">
+        {captureBanner && (
+          <div role="status" data-capture-banner className="ex-capture-banner">
+            {captureBanner}
+          </div>
+        )}
         <div className="flow-scroll">
           {loading && <div className="flow-empty">Reading functions…</div>}
           {!loading && error && <div className="flow-empty">{error}</div>}

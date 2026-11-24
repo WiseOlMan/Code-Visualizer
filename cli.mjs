@@ -6,6 +6,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { captureGraph } from './tools/capture-graph.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -15,6 +16,7 @@ function printHelp() {
 Usage:
   code-explorer serve [options]
   code-explorer analyze <repo> [--out <dir>]
+  code-explorer screenshot --url <ui> --out <file.png> [--timeout <ms>]
   code-explorer --help
 
 serve options:
@@ -24,6 +26,15 @@ serve options:
   --open            Open the UI in the default browser
   --base <branch>   Compare branch changes to this branch
   --pr <n|url>      Compare to that pull request's base (wins over --base)
+
+screenshot options:
+  --url <ui>        Code Explorer page to capture (required)
+  --out <file.png>  Where to write the PNG (required)
+  --timeout <ms>    How long to wait for data-graph-ready (default: 45000)
+
+screenshot waits until #root has data-graph-ready="true" (git compare loaded
+and the active Graph or Flow layout has settled). On compare-error, empty, or
+timeout it prints JSON and exits non-zero without writing an image.
 
 Cloud / npx (do not npm i -g — EACCES on cloud VMs):
   npx -y github:WiseOlMan/Code-Visualizer serve --repo "$PWD"
@@ -117,6 +128,8 @@ const { values, positionals } = parseArgs({
     base: { type: 'string' },
     pr: { type: 'string' },
     out: { type: 'string' },
+    url: { type: 'string' },
+    timeout: { type: 'string' },
   },
   allowPositionals: true,
 });
@@ -139,6 +152,17 @@ if (cmd === 'serve') {
     base: values.base,
     pr: values.pr,
   });
+} else if (cmd === 'screenshot') {
+  const timeout = Number(values.timeout || 45000);
+  const result = await captureGraph({
+    url: values.url,
+    outPath: values.out,
+    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 45000,
+  });
+  const text = JSON.stringify(result);
+  if (result.ok) console.log(text);
+  else console.error(text);
+  process.exit(result.ok ? 0 : 1);
 } else if (cmd === 'analyze') {
   const repo = values.repo || positionals[1] || positionals[0];
   if (!repo || repo === 'analyze') {

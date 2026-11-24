@@ -507,6 +507,9 @@ export class CodeGraphEngine extends React.Component {
   }
 
   componentDidUpdate(prev) {
+    if (this.props.layoutEpoch !== prev.layoutEpoch) {
+      this._reportedEpoch = null;
+    }
     if (prev.active !== this.props.active) {
       if (this.props.active === false) this.pauseEngine();
       else {
@@ -916,7 +919,19 @@ export class CodeGraphEngine extends React.Component {
     requestAnimationFrame(() => { if (!this._dead) this.positionTooltip(); });
   }
 
+  settleOverlay(epoch, patch, after) {
+    const generation = (this._overlayGen = (this._overlayGen || 0) + 1);
+    this.setState(patch, () => {
+      if (this._dead || this._overlayGen !== generation) return;
+      if (after) after();
+      this._overlaySettled = this.props.layoutEpoch === epoch;
+      this.kick();
+    });
+  }
+
   applyGitOverlay(gitInfo) {
+    const epoch = this.props.layoutEpoch || '';
+    this._overlaySettled = false;
     const files = gitInfo?.files || [];
     const byStatus = new Map();
     const byDiff = new Map();
@@ -973,7 +988,7 @@ export class CodeGraphEngine extends React.Component {
     if (overlaySig === this._gitOverlaySig && this.nodes?.length) {
       // Same change set — refresh banner fields only, don't rebuild nodes/layout.
       const missing = gitInfo?.missingFromGraph?.length || 0;
-      this.setState({
+      this.settleOverlay(epoch, {
         gitStale: !!gitInfo?.stale,
         gitMissing: missing,
         gitSourcesNewer: gitInfo?.sourcesNewer?.length || 0,
@@ -1062,7 +1077,7 @@ export class CodeGraphEngine extends React.Component {
     } else {
       patch.highlightGit = this._gitHighlightPinned;
     }
-    this.setState(patch, () => {
+    this.settleOverlay(epoch, patch, () => {
       this.applyFilter();
       if (this.props.initialOnlyGit && gitFileCount && !this._focusedGitOnce) {
         this._focusedGitOnce = true;
@@ -1082,7 +1097,7 @@ export class CodeGraphEngine extends React.Component {
     for (const n of this.nodes) {
       // "Changed only" wins: show every git-touched file (incl. tests) and keep
       // folder cells rebuilt from that set so foldering stays intact.
-      if (onlyGit) {
+      if (onlyGit && this._gitOverlaySig != null) {
         n.off = !n.gitChanged;
       } else {
         n.off =
@@ -1351,9 +1366,12 @@ export class CodeGraphEngine extends React.Component {
 
   /** Screenshot hook: ready only after the layout has settled. Flow view sets the same attributes. */
   syncCaptureReady(ready) {
-    if (ready === this._captureReady && this._captureOwner === (this.props.viewActive !== false)) return;
+    const owner = this.props.viewActive !== false;
+    const same = ready === this._captureReady && this._captureOwner === owner;
     this._captureReady = ready;
-    this._captureOwner = this.props.viewActive !== false;
+    if (ready && owner) this.noteLayoutFrame();
+    if (same) return;
+    this._captureOwner = owner;
     const cv = this.canvasRef?.current;
     if (cv) cv.dataset.captureReady = ready ? '1' : '0';
     if (this.props.viewActive === false || typeof document === 'undefined') return;
@@ -1824,6 +1842,16 @@ export class CodeGraphEngine extends React.Component {
     this.drawScreenLabels(labelQueue, mono);
     this.positionTooltip();
     this.positionHopCard();
+  }
+
+  noteLayoutFrame() {
+    const epoch = this.props.layoutEpoch;
+    // Report only after the sim has cooled. A single frame still has nodes in flight.
+    if (!epoch || !this._overlaySettled || !this._captureReady || !this.w || !this.h) return;
+    if (this.props.viewActive === false) return;
+    if (this._reportedEpoch === epoch) return;
+    this._reportedEpoch = epoch;
+    this.props.onLayoutFrame?.(epoch);
   }
 
   drawScreenLabels(queue, mono) {
@@ -2489,6 +2517,7 @@ export class CodeGraphEngine extends React.Component {
       legendRef: this.legendRef,
       repoName: this.state.repoName || 'codebase',
       statLine: this.state.stats || 'loading…',
+      captureBanner: this.props.captureBanner || '',
       query: this.state.query,
       sidebarOpen: this.props.sidebarOpen !== false,
       panelTab: this.state.panelTab || 'details',
